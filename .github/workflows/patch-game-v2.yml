@@ -1,4 +1,4 @@
-name: Patch gold piece state
+name: Patch gold line rewards
 
 on:
   push:
@@ -15,30 +15,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Update game state
+      - name: Update line clearing
         run: |
           python - <<'PY'
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          pairs=[
-            ('const PCOL={I:"#3cbcfc",O:"#f8d800",T:"#b83ce8",S:"#38d038",Z:"#f83c3c",J:"#3858f8",L:"#f89838"};',
-             'const PCOL={I:"#3cbcfc",O:"#f8d800",T:"#b83ce8",S:"#38d038",Z:"#f83c3c",J:"#3858f8",L:"#f89838"};\nconst GOLD="#ffd700";'),
-            ('  L.blocks.push({col:58,row:GROUND-3,used:false,item:"mush"});',
-             '  L.blocks.push({col:58,row:GROUND-3,used:false,item:"mush"});\n  L.blocks.push({col:39,row:GROUND-3,used:false,item:"coin"});'),
-            ('next:null,cur:null,dropT:0',
-             'next:null,nextGold:false,cur:null,dropT:0'),
-            ('P.cur={t,rot:0,col:((PW-w)/2)|0,row:0}; P.dropT=0; P.hdir=0;',
-             'P.cur={t,rot:0,col:((PW-w)/2)|0,row:0,gold:P.nextGold}; P.nextGold=false; P.dropT=0; P.hdir=0;'),
-            ('if(P.cur){ for(const [c,r] of pieceCells(P.cur,P.cur.rot)){ if(r<0)continue; block3d(ox+c*cell,oy+r*cell,cell,PCOL[P.cur.t]); } }',
-             'if(P.cur){ const curColor=P.cur.gold?GOLD:PCOL[P.cur.t]; for(const [c,r] of pieceCells(P.cur,P.cur.rot)){ if(r<0)continue; block3d(ox+c*cell,oy+r*cell,cell,curColor); } }'),
-            ('if(P.next){ const s=Math.min(14,cell*0.7); for(const [c,r] of SHAPES[P.next][0]) block3d(PX+6+c*s,PYY+20+r*s,s-1,PCOL[P.next]); }',
-             'if(P.next){ const s=Math.min(14,cell*0.7), nextColor=P.nextGold?GOLD:PCOL[P.next]; for(const [c,r] of SHAPES[P.next][0]) block3d(PX+6+c*s,PYY+20+r*s,s-1,nextColor); }')
-          ]
-          for old,new in pairs:
-              if s.count(old)!=1:
-                  raise SystemExit(f'expected one match for {old[:40]!r}, found {s.count(old)}')
-              s=s.replace(old,new,1)
+          a=s.index('function lockPiece(){')
+          b=s.index('function ensureSpawnRoom',a)
+          replacement='''function lockPiece(){
+  const color=P.cur.gold?GOLD:PCOL[P.cur.t];
+  for(const [c,r] of pieceCells(P.cur,P.cur.rot))
+    if(r>=0&&r<rows()&&c>=0&&c<PW) P.grid[r][c]=color;
+  addTime(CFG.addLock,"+"+CFG.addLock);
+  const result=clearLines(), cleared=result.count;
+  if(cleared>0){
+    ships+=cleared;
+    const base=CFG.addLine[cleared]||CFG.addLine[4];
+    const goldBonus=result.gold*CFG.addLine[1];
+    const add=base+goldBonus;
+    const goldLabel=result.gold>0?" GOLD x"+result.gold:"";
+    addTime(add,(cleared>=4?"TETRIS!":cleared+"LINE")+goldLabel+" +"+add);
+  }
+  P.cur=null; P.intakeT=CFG.intake;
+}
+function clearLines(){ let n=0,gold=0;
+  for(let r=rows()-1;r>=0;r--){
+    if(P.grid[r].every(x=>x)){
+      if(P.grid[r].some(x=>x===GOLD)) gold++;
+      P.grid.splice(r,1); P.grid.unshift(emptyRow()); n++; r++;
+    }
+  }
+  return {count:n,gold};
+}
+'''
+          s=s[:a]+replacement+s[b:]
           p.write_text(s,encoding='utf-8')
           PY
           python - <<'PY'
@@ -53,5 +64,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Add gold tetromino state and coin box"
+          git commit -m "Add per-line gold time bonuses"
           git push
