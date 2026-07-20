@@ -1,4 +1,4 @@
-name: Patch gold line rewards
+name: Patch coin and hip drop mechanics
 
 on:
   push:
@@ -15,17 +15,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Update line clearing
+      - name: Update mechanics
         run: |
           python - <<'PY'
           from pathlib import Path
           import base64
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          a=s.index('function lockPiece(){')
-          b=s.index('function ensureSpawnRoom',a)
-          replacement=base64.b64decode('ZnVuY3Rpb24gbG9ja1BpZWNlKCl7CiAgY29uc3QgY29sb3I9UC5jdXIuZ29sZD9HT0xEOlBDT0xbUC5jdXIudF07CiAgZm9yKGNvbnN0IFtjLHJdIG9mIHBpZWNlQ2VsbHMoUC5jdXIsUC5jdXIucm90KSkKICAgIGlmKHI+PTAmJnI8cm93cygpJiZjPj0wJiZjPFBXKSBQLmdyaWRbcl1bY109Y29sb3I7CiAgYWRkVGltZShDRkcuYWRkTG9jaywiKyIrQ0ZHLmFkZExvY2spOwogIGNvbnN0IHJlc3VsdD1jbGVhckxpbmVzKCksIGNsZWFyZWQ9cmVzdWx0LmNvdW50OwogIGlmKGNsZWFyZWQ+MCl7CiAgICBzaGlwKz1jbGVhcmVkOwogICAgY29uc3QgYmFzZT1DRkcuYWRkTGluZVtjbGVhcmVkXXx8Q0ZHLmFkZExpbmVbNF07CiAgICBjb25zdCBnb2xkQm9udXM9cmVzdWx0LmdvbGQqQ0ZHLmFkZExpbmVbMV07CiAgICBjb25zdCBhZGQ9YmFzZStnb2xkQm9udXM7CiAgICBjb25zdCBnb2xkTGFiZWw9cmVzdWx0LmdvbGQ+MD8iIEdPTEQgeCIrcmVzdWx0LmdvbGQ6IiI7CiAgICBhZGRUaW1lKGFkZCwoY2xlYXJlZD49ND8iVEVUUklTISI6Y2xlYXJlZCsiTElORSIpK2dvbGRMYWJlbCsiICsiK2FkZCk7CiAgfQogIFAuY3VyPW51bGw7IFAuaW50YWtlVD1DRkcuaW50YWtlOwp9CmZ1bmN0aW9uIGNsZWFyTGluZXMoKXsgbGV0IG49MCxnb2xkPTA7CiAgZm9yKGxldCByPXJvd3MoKS0xO3I+PTA7ci0tKXsKICAgIGlmKFAuZ3JpZFtyXS5ldmVyeSh4PT54KSl7CiAgICAgIGlmKFAuZ3JpZFtyXS5zb21lKHg9Png9PT1HT0xEKSkKICAgICAgICBnb2xkKys7CiAgICAgIFAuZ3JpZC5zcGxpY2UociwxKTsgUC5ncmlkLnVuc2hpZnQoZW1wdHlSb3coKSk7IG4rKzsgcisrOwogICAgfQogIH0KICByZXR1cm4ge2NvdW50Om4sZ29sZH07Cn0K').decode('utf-8')
+          if s.count('ship+=cleared;')!=1:
+              raise SystemExit(f'ship typo matches: {s.count("ship+=cleared;")}')
+          s=s.replace('ship+=cleared;','ships+=cleared;',1)
+          a=s.index('function resolveBlocks(){')
+          b=s.index('function updateEntities',a)
+          replacement=base64.b64decode('ZnVuY3Rpb24gcmVsZWFzZUJsb2NrSXRlbShiLHEpewogIGlmKGIudXNlZHx8IWIuaXRlbSkgcmV0dXJuOwogIGIudXNlZD10cnVlOwogIGlmKGIuaXRlbT09PSJtdXNoIikgZW50cy5wdXNoKHt0eXBlOiJtdXNoIix4OnEuY3gseTpxLnksdnk6LTE2MCxkaXI6MSxhbGl2ZTp0cnVlLGFuaW06MH0pOwogIGVsc2UgaWYoYi5pdGVtPT09ImNvaW4iKSBlbnRzLnB1c2goe3R5cGU6ImNvaW4iLHg6cS5jeCx5OnEueSx2eTotMjYwLGRpcjowLGFsaXZlOnRydWUsYW5pbTowfSk7Cn0KZnVuY3Rpb24gcmVzb2x2ZUJsb2NrcygpewogIGNvbnN0IHBsPUEueC1BLncvMiwgcHI9QS54K0Eudy8yLCBwdD1BLnktQS5oLCBwYj1BLnk7CiAgZm9yKGxldCBpPUwuYmxvY2tzLmxlbmd0aC0xO2k+PTA7aS0tKXsKICAgIGNvbnN0IGI9TC5ibG9ja3NbaV0sIHE9YmxvY2tSZWN0KGIpOwogICAgY29uc3QgYng9cS54LCBieT1xLnksIGJyPXEuciwgYmI9cS5iOwogICAgaWYocHI8PWJ4fHxwbD49YnJ8fHBiPD1ieXx8cHQ+PWJiKSBjb250aW51ZTsKICAgIGNvbnN0IG94PU1hdGgubWluKHByLGJyKS1NYXRoLm1heChwbCxieCksIG95PU1hdGgubWluKHBiLGJiKS1NYXRoLm1heChwdCxieSk7CiAgICBpZihveDxveSl7IGlmKEEueDxxLmN4KSBBLngtPW94OyBlbHNlIEEueCs9b3g7IGNvbnRpbnVlOyB9CiAgICBpZihBLnktQS5oLzIgPCBieStUSUxFLzIpewogICAgICBpZihBLmhpcERyb3BwaW5nKXsKICAgICAgICByZWxlYXNlQmxvY2tJdGVtKGIscSk7CiAgICAgICAgTC5ibG9ja3Muc3BsaWNlKGksMSk7CiAgICAgICAgQS5oaXBEcm9wcGluZz1mYWxzZTsgQS5oaXBMYW5kZWQ9dHJ1ZTsKICAgICAgfSBlbHNlIHsKICAgICAgICBBLnk9Ynk7IEEudnk9MDsgQS5vbkdyb3VuZD10cnVlOwogICAgICB9CiAgICB9IGVsc2UgewogICAgICBBLnk9YmIrQS5oOyBBLnZ5PTA7CiAgICAgIGlmKGIudHlwZSE9PSJicmljayIpIHJlbGVhc2VCbG9ja0l0ZW0oYixxKTsKICAgIH0KICB9Cn0K').decode('utf-8')
           s=s[:a]+replacement+s[b:]
+          pairs=[
+            ('const spd = e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :',
+             'const spd = e.type==="coin"?0 : e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :'),
+            ('if(e.type==="mush"){ grow(); e.alive=false; }\n      else if(e.type==="foe"){',
+             'if(e.type==="mush"){ grow(); e.alive=false; }\n      else if(e.type==="coin"){ P.nextGold=true; e.alive=false; addFloat("GOLD NEXT",PX+PWD*0.5,PYY+PVH*0.3,GOLD); }\n      else if(e.type==="foe"){'),
+            ('function drawFoe(x,yfoot,t){',
+             base64.b64decode('ZnVuY3Rpb24gZHJhd0NvaW4oeCx5Zm9vdCx0KXsgY29uc3Qgcz1USUxFKjAuNSwgdz1NYXRoLm1heCg0LE1hdGguYWJzKE1hdGguY29zKHQqOCkpKnMpOwogIGcuZmlsbFN0eWxlPUdPTEQ7IGcuYmVnaW5QYXRoKCk7IGcuZWxsaXBzZSh4LHlmb290LXMqMC41LHcqMC41LHMqMC41LDAsMCw3KTsgZy5maWxsKCk7CiAgZy5zdHJva2VTdHlsZT0iIzlhNmEwMCI7IGcubGluZVdpZHRoPTI7IGcuc3Ryb2tlKCk7CiAgZy5maWxsU3R5bGU9InJnYmEoMjU1LDI1NSwyNTUsLjY1KSI7IGcuZmlsbFJlY3QoeC13KjAuMTgseWZvb3QtcyowLjc4LE1hdGgubWF4KDIsdyowLjEyKSxzKjAuNSk7Cn0K').decode('utf-8')+'function drawFoe(x,yfoot,t){'),
+            ('if(e.type==="mush") drawMush(e.x,e.y);\n    else if(e.type==="foe")',
+             'if(e.type==="mush") drawMush(e.x,e.y);\n    else if(e.type==="coin") drawCoin(e.x,e.y,e.anim);\n    else if(e.type==="foe")')
+          ]
+          for old,new in pairs:
+              if s.count(old)!=1:
+                  raise SystemExit(f'expected one match for {old[:45]!r}, found {s.count(old)}')
+              s=s.replace(old,new,1)
           p.write_text(s,encoding='utf-8')
           PY
           python - <<'PY'
@@ -40,5 +57,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Add per-line gold time bonuses"
+          git commit -m "Add coin reward and hip-drop block breaking"
           git push
