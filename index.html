@@ -38,6 +38,7 @@ const ACTION_WORLD_H=(8+2)*TILE;
 
 const SKY="#5c94fc", BRICK="#c84c0c", MORTAR="#2a1204", GRND="#e07818", GRND_D="#a04c08";
 const PCOL={I:"#3cbcfc",O:"#f8d800",T:"#b83ce8",S:"#38d038",Z:"#f83c3c",J:"#3858f8",L:"#f89838"};
+const GOLD="#ffd700";
 
 /* ===== INPUT ===== */
 const keyH={left:false,right:false,up:false,down:false};
@@ -105,6 +106,7 @@ function buildLevel(){
   // ?ボックス（キノコ）
   L.blocks.push({col:9,row:GROUND-3,used:false,item:"mush"});
   L.blocks.push({col:58,row:GROUND-3,used:false,item:"mush"});
+  L.blocks.push({col:39,row:GROUND-3,used:false,item:"coin"});
   // レンガ足場（原作に近い大きさと高さ。ジャンプ力側で上に乗れるよう調整）
   L.blocks.push({col:12,row:GROUND-3,type:"brick"});
   L.blocks.push({col:72,row:GROUND-3,type:"brick"});
@@ -140,14 +142,14 @@ function reset(){
      invuln:0,anim:0,w:TILE*0.62,h:TILE*0.78,hipDropping:false,hipLanded:false};
   for(const c of L.foes) ents.push({type:"foe",x:c*TILE+TILE/2,y:GROUND*TILE,vy:0,dir:-1,alive:true,anim:0});
   for(const c of L.nok) ents.push({type:"nok",state:"walk",x:c*TILE+TILE/2,y:GROUND*TILE,vy:0,dir:-1,alive:true,anim:0});
-  P={grid:Array.from({length:CFG.rowsBase},()=>emptyRow()),bag:newBag(),next:null,cur:null,dropT:0,intakeT:0,hdir:0,das:0};
+  P={grid:Array.from({length:CFG.rowsBase},()=>emptyRow()),bag:newBag(),next:null,nextGold:false,cur:null,dropT:0,intakeT:0,hdir:0,das:0};
   P.next=P.bag.pop(); spawnPiece();
 }
 function rows(){return P.grid.length;}
 function spawnPiece(){
   const t=P.next; P.next=P.bag.length?P.bag.pop():(P.bag=newBag()).pop();
   const cells=SHAPES[t][0], w=Math.max(...cells.map(c=>c[0]))+1;
-  P.cur={t,rot:0,col:((PW-w)/2)|0,row:0}; P.dropT=0; P.hdir=0;
+  P.cur={t,rot:0,col:((PW-w)/2)|0,row:0,gold:P.nextGold}; P.nextGold=false; P.dropT=0; P.hdir=0;
   if(collide(P.cur,0,0,P.cur.rot)) gameOver("積みあがってゲームオーバー");
 }
 function pieceCells(p,rot){return SHAPES[p.t][rot].map(([c,r])=>[p.col+c,p.row+r]);}
@@ -540,10 +542,10 @@ function renderPuzzle(){
   for(let r=0;r<R;r++)for(let c=0;c<PW;c++){ const x=ox+c*cell,y=oy+r*cell;
     g.fillStyle="#181818"; g.fillRect(x,y,cell,cell); g.strokeStyle="#242424"; g.lineWidth=1; g.strokeRect(x+.5,y+.5,cell-1,cell-1);
     const v=P.grid[r][c]; if(v) block3d(x,y,cell,v); }
-  if(P.cur){ for(const [c,r] of pieceCells(P.cur,P.cur.rot)){ if(r<0)continue; block3d(ox+c*cell,oy+r*cell,cell,PCOL[P.cur.t]); } }
+  if(P.cur){ const curColor=P.cur.gold?GOLD:PCOL[P.cur.t]; for(const [c,r] of pieceCells(P.cur,P.cur.rot)){ if(r<0)continue; block3d(ox+c*cell,oy+r*cell,cell,curColor); } }
   if(expandLevel>0){ g.strokeStyle="#38d038"; g.lineWidth=3; g.beginPath(); g.moveTo(ox,oy); g.lineTo(ox+boardW,oy); g.stroke(); }
   g.fillStyle="#fff"; g.font="700 11px 'Courier New',monospace"; g.textAlign="left"; g.fillText("NEXT",PX+6,PYY+14);
-  if(P.next){ const s=Math.min(14,cell*0.7); for(const [c,r] of SHAPES[P.next][0]) block3d(PX+6+c*s,PYY+20+r*s,s-1,PCOL[P.next]); }
+  if(P.next){ const s=Math.min(14,cell*0.7), nextColor=P.nextGold?GOLD:PCOL[P.next]; for(const [c,r] of SHAPES[P.next][0]) block3d(PX+6+c*s,PYY+20+r*s,s-1,nextColor); }
   g.restore();
   g.strokeStyle="#000"; g.lineWidth=2; g.strokeRect(PX+1,PYY,PWD-2,PVH);
   g.textAlign="center";
