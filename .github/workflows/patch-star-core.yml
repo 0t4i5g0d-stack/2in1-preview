@@ -1,0 +1,210 @@
+name: Patch star core
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-star-core.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch star mechanics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              s = s.replace(old, new, 1)
+
+          replace_once(
+              '  mushSpd:70, foeSpd:55, nokSpd:45, shellSpeed:260, hipDropSpeed:780,\n  cols:10, rowsBase:20, expStep:4, expMax:3,',
+              '  mushSpd:70, starSpd:95, foeSpd:55, nokSpd:45, shellSpeed:260, hipDropSpeed:780,\n  starDuration:10, starGrace:5, starExtraRows:8,\n  cols:10, rowsBase:20, expStep:4, expMax:3,',
+              'config')
+
+          replace_once(
+              '  L.blocks.push({col:58,row:GROUND-3,used:false,item:"mush"});',
+              '  L.blocks.push({col:58,row:GROUND-3,used:false,item:"star"});',
+              'star box')
+
+          replace_once(
+              'let L,P,A,timer,isBig,expandLevel,ents,floats,flash,elapsed,deaths,ships,hits,loseReason,anim=0;',
+              'let L,P,A,timer,isBig,expandLevel,ents,floats,flash,elapsed,deaths,ships,hits,loseReason,anim=0;\nlet starTimer=0,starGraceTimer=0,starExtraRows=0;',
+              'star globals')
+
+          replace_once(
+              '  L=buildLevel(); timer=CFG.timeStart; isBig=false; expandLevel=0;',
+              '  L=buildLevel(); timer=CFG.timeStart; isBig=false; expandLevel=0; starTimer=0; starGraceTimer=0; starExtraRows=0;',
+              'star reset')
+
+          replace_once(
+              '  if(collide(P.cur,0,0,P.cur.rot)) gameOver("積みあがってゲームオーバー");',
+              '''  let guard=0;
+  while(collide(P.cur,0,0,P.cur.rot) && starTimer>0 && guard++<CFG.starExtraRows){
+    P.grid.unshift(emptyRow()); starExtraRows++; P.cur.row++;
+  }
+  if(collide(P.cur,0,0,P.cur.rot)) gameOver("積みあがってゲームオーバー");''',
+              'top out')
+
+          replace_once(
+              'function applyDamage(){ if(A.invuln>0)return;',
+              'function applyDamage(){ if(starTimer>0||A.invuln>0)return;',
+              'invulnerability')
+
+          anchor = 'function addFloat(text,x,y,color,toTimer){ floats.push({text,x,y,color,life:1.0,vy:-24,toTimer:!!toTimer}); }'
+          star_functions = '''function addFloat(text,x,y,color,toTimer){ floats.push({text,x,y,color,life:1.0,vy:-24,toTimer:!!toTimer}); }
+function activateStar(){
+  if(starExtraRows===0){
+    starExtraRows=CFG.starExtraRows;
+    for(let i=0;i<starExtraRows;i++) P.grid.unshift(emptyRow());
+    if(P.cur) P.cur.row+=starExtraRows;
+  }
+  starTimer=CFG.starDuration;
+  starGraceTimer=0;
+  addFloat("STAR "+CFG.starDuration+"s",PX+PWD*0.5,PYY+PVH*0.30,"#fff176");
+}
+function starOverflowClear(){
+  if(starExtraRows<=0) return true;
+  const lockedClear=P.grid.slice(0,starExtraRows).every(row=>row.every(v=>!v));
+  const activeClear=!P.cur||pieceCells(P.cur,P.cur.rot).every(([,r])=>r>=starExtraRows);
+  return lockedClear&&activeClear;
+}
+function finishStarOverflow(){
+  if(starExtraRows<=0) return;
+  if(!starOverflowClear()){ gameOver("スター終了：枠外にブロック"); return; }
+  P.grid.splice(0,starExtraRows);
+  if(P.cur) P.cur.row-=starExtraRows;
+  starExtraRows=0;
+  addFloat("SAFE",PX+PWD*0.5,PYY+PVH*0.30,"#38d038");
+}
+function updateStar(dt){
+  if(starTimer>0){
+    starTimer=Math.max(0,starTimer-dt);
+    if(starTimer===0){
+      starGraceTimer=CFG.starGrace;
+      addFloat("枠内へ "+CFG.starGrace+"s",PX+PWD*0.5,PYY+PVH*0.30,"#f83c3c");
+    }
+  }else if(starGraceTimer>0){
+    starGraceTimer=Math.max(0,starGraceTimer-dt);
+    if(starGraceTimer===0) finishStarOverflow();
+  }
+}'''
+          replace_once(anchor, star_functions, 'star functions')
+
+          start = s.index('function releaseBlockItem(b,q){')
+          end = s.index('function resolveBlocks(){', start)
+          s = s[:start] + '''function releaseBlockItem(b,q){
+  if(b.used||!b.item) return;
+  b.used=true;
+  if(b.item==="mush") ents.push({type:"mush",x:q.cx,y:q.y,vy:-160,dir:1,alive:true,anim:0});
+  else if(b.item==="coin") ents.push({type:"coin",x:q.cx,y:q.y,vy:-260,dir:0,alive:true,anim:0});
+  else if(b.item==="star") ents.push({type:"star",x:q.cx,y:q.y,vy:-300,dir:1,alive:true,anim:0});
+}
+''' + s[end:]
+
+          replace_once(
+              '    const spd = e.type==="coin"?0 : e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :',
+              '    const spd = e.type==="coin"?0 : e.type==="star"?CFG.starSpd : e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :',
+              'star speed')
+
+          replace_once(
+              '    if(gy!==null && prevY<=gy && e.y>=gy && e.vy>=0){ e.y=gy; e.vy=0; }',
+              '    if(gy!==null && prevY<=gy && e.y>=gy && e.vy>=0){ e.y=gy; e.vy=e.type==="star"?-300:0; }',
+              'star bounce')
+
+          replace_once(
+              '      else if(e.type==="coin"){ P.nextGold=true; e.alive=false; addFloat("GOLD NEXT",PX+PWD*0.5,PYY+PVH*0.3,GOLD); }\n      else if(e.type==="foe"){',
+              '      else if(e.type==="coin"){ P.nextGold=true; e.alive=false; addFloat("GOLD NEXT",PX+PWD*0.5,PYY+PVH*0.3,GOLD); }\n      else if(e.type==="star"){ activateStar(); e.alive=false; }\n      else if(e.type==="foe"){',
+              'star collect')
+
+          replace_once(
+              '''      else if(e.type==="foe"){
+        if(stomp){ e.alive=false; A.vy=-CFG.stompBounce; } else applyDamage();
+      } else if(e.type==="nok"){
+        if(e.state==="walk"){''',
+              '''      else if(e.type==="foe"){
+        if(starTimer>0){ e.alive=false; addFloat("STAR撃破",AX+AW*0.5,AY+44,"#fff176"); }
+        else if(stomp){ e.alive=false; A.vy=-CFG.stompBounce; } else applyDamage();
+      } else if(e.type==="nok"){
+        if(starTimer>0){ e.alive=false; addFloat("STAR撃破",AX+AW*0.5,AY+44,"#fff176"); }
+        else if(e.state==="walk"){''',
+              'star defeats enemies')
+
+          replace_once(
+              '      updateAction(STEP,frame); updateEntities(STEP); updatePuzzle(STEP,frame);',
+              '      updateAction(STEP,frame); updateEntities(STEP); updatePuzzle(STEP,frame); updateStar(STEP);',
+              'star loop')
+
+          draw_anchor = 'function drawFoe(x,yfoot,t){'
+          draw_star = '''function traceStar(r){
+  g.beginPath();
+  for(let i=0;i<10;i++){
+    const a=-Math.PI/2+i*Math.PI/5, rr=i%2===0?r:r*0.46;
+    const x=Math.cos(a)*rr, y=Math.sin(a)*rr;
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+  }
+  g.closePath();
+}
+function drawStarItem(x,yfoot,t){
+  const r=TILE*0.38;
+  g.save(); g.translate(x,yfoot-r*1.05); g.rotate(Math.sin(t*5)*0.18);
+  g.shadowColor="#fff176"; g.shadowBlur=10;
+  g.fillStyle="hsl("+((t*180)%360)+" 95% 62%)"; traceStar(r); g.fill();
+  g.shadowBlur=0; g.strokeStyle="#fff"; g.lineWidth=2; g.stroke();
+  g.fillStyle="#111"; g.fillRect(-r*0.32,-r*0.15,r*0.13,r*0.24); g.fillRect(r*0.19,-r*0.15,r*0.13,r*0.24);
+  g.restore();
+}
+function drawStarAura(x,y,w,h){
+  g.save();
+  g.globalAlpha=0.24; g.fillStyle="hsl("+((anim*220)%360)+" 100% 65%)";
+  g.beginPath(); g.ellipse(x,y-h*0.5,w*0.9,h*0.7,0,0,Math.PI*2); g.fill();
+  g.globalAlpha=0.9; g.fillStyle="#fff";
+  for(let i=0;i<3;i++){
+    const a=anim*3+i*2.1, sx=x+Math.cos(a)*w*0.8, sy=y-h*0.5+Math.sin(a)*h*0.55;
+    g.fillRect(sx-1,sy-4,2,8); g.fillRect(sx-4,sy-1,8,2);
+  }
+  g.restore();
+}
+function drawFoe(x,yfoot,t){'''
+          replace_once(draw_anchor, draw_star, 'star drawing')
+
+          replace_once(
+              '    else if(e.type==="coin") drawCoin(e.x,e.y,e.anim);\n    else if(e.type==="foe")',
+              '    else if(e.type==="coin") drawCoin(e.x,e.y,e.anim);\n    else if(e.type==="star") drawStarItem(e.x,e.y,e.anim);\n    else if(e.type==="foe")',
+              'render star')
+
+          replace_once(
+              '  if(!(A.invuln>0 && Math.floor(A.invuln*12)%2===0)) drawHero(A.x-A.w/2,A.y-A.h,A.w,A.h,A.face,A.crouch);',
+              '  if(starTimer>0) drawStarAura(A.x,A.y,A.w,A.h);\n  if(!(A.invuln>0 && Math.floor(A.invuln*12)%2===0)) drawHero(A.x-A.w/2,A.y-A.h,A.w,A.h,A.face,A.crouch);',
+              'star aura')
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          Path('/tmp/game.js').write_text(s.split('<script>',1)[1].split('</script>',1)[0],encoding='utf-8')
+          PY
+          node --check /tmp/game.js
+          git diff --check
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Add 10-second star mechanics"
+          git push
