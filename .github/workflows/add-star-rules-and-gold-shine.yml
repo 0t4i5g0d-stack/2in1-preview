@@ -1,0 +1,269 @@
+name: Add star rules and gold shine
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/add-star-rules-and-gold-shine.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch game
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+
+          def once(old,new,name):
+              global s
+              n=s.count(old)
+              if n!=1:
+                  raise SystemExit(f'{name}: expected 1 match, found {n}')
+              s=s.replace(old,new,1)
+
+          once(
+              '  mushSpd:70, foeSpd:55, nokSpd:45, shellSpeed:260, hipDropSpeed:780,\n  cols:10, rowsBase:20, expStep:4, expMax:3,',
+              '  mushSpd:70, starSpd:95, foeSpd:55, nokSpd:45, shellSpeed:260, hipDropSpeed:780,\n  starDuration:10, starGrace:5, starExtraRows:8,\n  cols:10, rowsBase:20, expStep:4, expMax:3,',
+              'star config')
+
+          once('L.blocks.push({col:58,row:GROUND-3,used:false,item:"mush"});',
+               'L.blocks.push({col:58,row:GROUND-3,used:false,item:"star"});',
+               'second box becomes star')
+
+          once('let L,P,A,timer,isBig,expandLevel,ents,floats,flash,elapsed,deaths,ships,hits,loseReason,anim=0;',
+               'let L,P,A,timer,isBig,expandLevel,ents,floats,flash,elapsed,deaths,ships,hits,loseReason,anim=0;\nlet starTimer=0,starGrace=0,starOverflowRows=0;',
+               'star state globals')
+
+          once('L=buildLevel(); timer=CFG.timeStart; isBig=false; expandLevel=0;',
+               'L=buildLevel(); timer=CFG.timeStart; isBig=false; expandLevel=0; starTimer=0; starGrace=0; starOverflowRows=0;',
+               'reset star state')
+
+          once('if(collide(P.cur,0,0,P.cur.rot)) gameOver("積みあがってゲームオーバー");',
+               '''let starGuard=0;
+  while(collide(P.cur,0,0,P.cur.rot) && starTimer>0 && starGuard++<8){
+    P.grid.unshift(emptyRow()); starOverflowRows++; P.cur.row++;
+  }
+  if(collide(P.cur,0,0,P.cur.rot)) gameOver("積みあがってゲームオーバー");''',
+               'star top-out suspension')
+
+          once('function applyDamage(){ if(A.invuln>0)return;',
+               'function applyDamage(){ if(starTimer>0||A.invuln>0)return;',
+               'star invulnerability')
+
+          once('function addFloat(text,x,y,color,toTimer){ floats.push({text,x,y,color,life:1.0,vy:-24,toTimer:!!toTimer}); }',
+               '''function addFloat(text,x,y,color,toTimer){ floats.push({text,x,y,color,life:1.0,vy:-24,toTimer:!!toTimer}); }
+function activateStar(){
+  if(starOverflowRows===0){
+    starOverflowRows=CFG.starExtraRows;
+    for(let i=0;i<starOverflowRows;i++) P.grid.unshift(emptyRow());
+    if(P.cur) P.cur.row+=starOverflowRows;
+  }
+  starTimer=CFG.starDuration; starGrace=0;
+  addFloat("STAR "+CFG.starDuration+"s",PX+PWD*0.5,PYY+PVH*0.32,"#fff176");
+}
+function starOverflowIsClear(){
+  if(starOverflowRows<=0)return true;
+  const locked=P.grid.slice(0,starOverflowRows).every(row=>row.every(x=>!x));
+  const active=!P.cur||pieceCells(P.cur,P.cur.rot).every(([,r])=>r>=starOverflowRows);
+  return locked&&active;
+}
+function closeStarOverflow(){
+  if(starOverflowRows<=0)return;
+  if(!starOverflowIsClear()){ gameOver("スター終了：枠外にブロック"); return; }
+  P.grid.splice(0,starOverflowRows);
+  if(P.cur) P.cur.row-=starOverflowRows;
+  starOverflowRows=0;
+  addFloat("SAFE",PX+PWD*0.5,PYY+PVH*0.32,"#38d038");
+}
+function updateStarState(dt){
+  if(starTimer>0){
+    starTimer=Math.max(0,starTimer-dt);
+    if(starTimer===0){ starGrace=CFG.starGrace; addFloat("枠内へ！ "+CFG.starGrace+"s",PX+PWD*0.5,PYY+PVH*0.32,"#f8d800"); }
+  } else if(starGrace>0){
+    starGrace=Math.max(0,starGrace-dt);
+    if(starGrace===0) closeStarOverflow();
+  }
+}''',
+               'star functions')
+
+          once('if(rows()>CFG.rowsBase) P.grid.splice(0, rows()-CFG.rowsBase);',
+               'if(rows()>CFG.rowsBase) P.grid.splice(0, rows()-CFG.rowsBase);\n  if(starOverflowRows>0){ starOverflowRows=0; starTimer=0; starGrace=0; }',
+               'shrink clears overflow bookkeeping')
+
+          a=s.index('function releaseBlockItem(b,q){')
+          b=s.index('function resolveBlocks(){',a)
+          s=s[:a]+'''function releaseBlockItem(b,q){
+  if(b.used||!b.item) return;
+  b.used=true;
+  if(b.item==="mush") ents.push({type:"mush",x:q.cx,y:q.y,vy:-160,dir:1,alive:true,anim:0});
+  else if(b.item==="coin") ents.push({type:"coin",x:q.cx,y:q.y,vy:-260,dir:0,alive:true,anim:0});
+  else if(b.item==="star") ents.push({type:"star",x:q.cx,y:q.y,vy:-300,dir:1,alive:true,anim:0});
+}
+'''+s[b:]
+
+          once('const spd = e.type==="coin"?0 : e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :',
+               'const spd = e.type==="coin"?0 : e.type==="star"?CFG.starSpd : e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :',
+               'star movement speed')
+
+          once('if(gy!==null && prevY<=gy && e.y>=gy && e.vy>=0){ e.y=gy; e.vy=0; }',
+               'if(gy!==null && prevY<=gy && e.y>=gy && e.vy>=0){ e.y=gy; e.vy=e.type==="star"?-300:0; }',
+               'star bounce')
+
+          once('else if(e.type==="coin"){ P.nextGold=true; e.alive=false; addFloat("GOLD NEXT",PX+PWD*0.5,PYY+PVH*0.3,GOLD); }\n      else if(e.type==="foe"){',
+               'else if(e.type==="coin"){ P.nextGold=true; e.alive=false; addFloat("GOLD NEXT",PX+PWD*0.5,PYY+PVH*0.3,GOLD); }\n      else if(e.type==="star"){ activateStar(); e.alive=false; }\n      else if(e.type==="foe"){',
+               'star collection')
+
+          once('''else if(e.type==="foe"){
+        if(stomp){ e.alive=false; A.vy=-CFG.stompBounce; } else applyDamage();
+      } else if(e.type==="nok"){
+        if(e.state==="walk"){''',
+               '''else if(e.type==="foe"){
+        if(starTimer>0){ e.alive=false; addFloat("STAR撃破",AX+AW*0.5,AY+44,"#fff176"); }
+        else if(stomp){ e.alive=false; A.vy=-CFG.stompBounce; } else applyDamage();
+      } else if(e.type==="nok"){
+        if(starTimer>0){ e.alive=false; addFloat("STAR撃破",AX+AW*0.5,AY+44,"#fff176"); }
+        else if(e.state==="walk"){''',
+               'star enemy defeat')
+
+          once('updateAction(STEP,frame); updateEntities(STEP); updatePuzzle(STEP,frame);',
+               'updateAction(STEP,frame); updateEntities(STEP); updatePuzzle(STEP,frame); updateStarState(STEP);',
+               'update star timer')
+
+          brick_pos=s.index('function brick(')
+          s=s[:brick_pos]+'''function drawGoldBlock(x,y,s,phase=0){
+  const pulse=0.5+0.5*Math.sin(anim*5+phase*0.17);
+  block3d(x,y,s,"hsl(46 100% "+(51+Math.round(pulse*12))+"%)");
+  g.save(); g.beginPath(); g.rect(x+1,y+1,s-2,s-2); g.clip();
+  const sweep=((anim*0.85+phase*0.071)%1.6)-0.3;
+  g.translate(x+sweep*s,y+s*0.5); g.rotate(-Math.PI/4);
+  g.globalAlpha=0.20+0.30*pulse; g.fillStyle="#fff"; g.fillRect(-s*0.09,-s,s*0.18,s*2);
+  g.restore();
+  const twinkle=0.5+0.5*Math.sin(anim*8+phase*1.7);
+  if(twinkle>0.72){
+    const a=(twinkle-0.72)/0.28, sx=x+s*0.78, sy=y+s*0.20, r=s*(0.07+0.08*a);
+    g.save(); g.globalAlpha=0.45+0.55*a; g.strokeStyle="#fff"; g.lineWidth=Math.max(1,s*0.045);
+    g.beginPath(); g.moveTo(sx-r,sy); g.lineTo(sx+r,sy); g.moveTo(sx,sy-r); g.lineTo(sx,sy+r); g.stroke(); g.restore();
+  }
+}
+'''+s[brick_pos:]
+
+          foe_pos=s.index('function drawFoe(')
+          s=s[:foe_pos]+'''function traceStarPath(r){
+  g.beginPath();
+  for(let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, rr=i%2===0?r:r*0.45; const x=Math.cos(a)*rr,y=Math.sin(a)*rr; if(i===0)g.moveTo(x,y);else g.lineTo(x,y); }
+  g.closePath();
+}
+function drawStarItem(x,yfoot,t){
+  const r=TILE*0.38;
+  g.save(); g.translate(x,yfoot-r*1.05); g.rotate(Math.sin(t*5)*0.18);
+  g.shadowColor="#fff176"; g.shadowBlur=10; g.fillStyle="hsl("+((t*180)%360)+" 95% 62%)"; traceStarPath(r); g.fill();
+  g.shadowBlur=0; g.strokeStyle="#fff"; g.lineWidth=2; g.stroke();
+  g.fillStyle="#111"; g.fillRect(-r*0.32,-r*0.15,r*0.13,r*0.24); g.fillRect(r*0.19,-r*0.15,r*0.13,r*0.24);
+  g.restore();
+}
+function drawStarAura(x,y,w,h){
+  g.save(); g.globalAlpha=0.22; g.fillStyle="hsl("+((anim*220)%360)+" 100% 65%)";
+  g.beginPath(); g.ellipse(x,y-h*0.5,w*0.85,h*0.68,0,0,Math.PI*2); g.fill();
+  g.globalAlpha=0.85; g.fillStyle="#fff";
+  for(let i=0;i<3;i++){ const a=anim*3+i*2.1, sx=x+Math.cos(a)*w*0.8, sy=y-h*0.5+Math.sin(a)*h*0.55; g.fillRect(sx-1,sy-4,2,8); g.fillRect(sx-4,sy-1,8,2); }
+  g.restore();
+}
+'''+s[foe_pos:]
+
+          once('else if(e.type==="coin") drawCoin(e.x,e.y,e.anim);\n    else if(e.type==="foe")',
+               'else if(e.type==="coin") drawCoin(e.x,e.y,e.anim);\n    else if(e.type==="star") drawStarItem(e.x,e.y,e.anim);\n    else if(e.type==="foe")',
+               'render star item')
+
+          once('if(!(A.invuln>0 && Math.floor(A.invuln*12)%2===0)) drawHero(A.x-A.w/2,A.y-A.h,A.w,A.h,A.face,A.crouch);',
+               'if(starTimer>0) drawStarAura(A.x,A.y,A.w,A.h);\n  if(!(A.invuln>0 && Math.floor(A.invuln*12)%2===0)) drawHero(A.x-A.w/2,A.y-A.h,A.w,A.h,A.face,A.crouch);',
+               'render star aura')
+
+          a=s.index('function renderPuzzle(){')
+          b=s.index('function renderEcho(){',a)
+          s=s[:a]+'''function renderRuleText(x,y,w,h){
+  const fs=Math.max(7,Math.min(11,Math.floor(w/11),Math.floor(h/18)));
+  const gap=fs*1.42;
+  const lines=[
+    ["RULE","#fff"],
+    ["LOCK +1s","#aaa"],
+    ["LINE 1/2/3/4","#fff"],
+    ["+5/+10/+15/+20s","#f8d800"],
+    ["COIN → NEXT GOLD",GOLD],
+    ["GOLD LINE ×2",GOLD],
+    ["STAR 10s","#fff176"],
+    ["SIDE: 敵撃破","#5c94fc"],
+    ["STACK: 枠外OK","#f8d800"],
+    ["5sで枠内へ","#f83c3c"],
+    ["HIP: 箱/レンガ破壊","#aaa"]
+  ];
+  if(starTimer>0) lines.unshift(["★ "+starTimer.toFixed(1)+"s","#fff176"]);
+  else if(starGrace>0) lines.unshift(["RETURN "+starGrace.toFixed(1)+"s","#f83c3c"]);
+  g.textAlign="left"; g.textBaseline="top"; g.font="700 "+fs+"px 'Courier New',monospace";
+  let yy=y;
+  for(const [text,color] of lines){ if(yy+fs>y+h)break; g.fillStyle=color; g.fillText(text,x,yy,w); yy+=gap; }
+  g.textBaseline="alphabetic";
+}
+function renderPuzzle(){
+  g.save(); g.beginPath(); g.rect(PX,PYY,PWD,PVH); g.clip();
+  g.fillStyle="#101010"; g.fillRect(PX,PYY,PWD,PVH);
+  const R=rows(), cell=Math.max(6,Math.floor(Math.min((PWD-8)/PW, PVH/R)));
+  const boardW=PW*cell, boardH=R*cell, ox=PX+(PWD-boardW)/2, oy=PYY+(PVH-boardH)/2;
+  g.fillStyle="#000"; g.fillRect(ox-3,oy-3,boardW+6,boardH+6);
+  for(let r=0;r<R;r++)for(let c=0;c<PW;c++){ const x=ox+c*cell,y=oy+r*cell;
+    g.fillStyle=r<starOverflowRows?(starTimer>0?"rgba(255,215,0,.12)":"rgba(248,120,0,.13)"):"#181818";
+    g.fillRect(x,y,cell,cell); g.strokeStyle=r<starOverflowRows?"rgba(255,220,80,.28)":"#242424"; g.lineWidth=1; g.strokeRect(x+.5,y+.5,cell-1,cell-1);
+    const v=P.grid[r][c]; if(v){ if(v===GOLD)drawGoldBlock(x,y,cell,r*PW+c); else block3d(x,y,cell,v); } }
+  if(P.cur){ for(const [c,r] of pieceCells(P.cur,P.cur.rot)){ if(r<0)continue; const x=ox+c*cell,y=oy+r*cell; if(P.cur.gold)drawGoldBlock(x,y,cell,r*PW+c+500); else block3d(x,y,cell,PCOL[P.cur.t]); } }
+  if(starOverflowRows>0){
+    const boundary=oy+starOverflowRows*cell;
+    g.strokeStyle=starTimer>0?"#fff176":"#f83c3c"; g.lineWidth=3; g.setLineDash([6,4]);
+    g.beginPath(); g.moveTo(ox,boundary); g.lineTo(ox+boardW,boundary); g.stroke(); g.setLineDash([]);
+    g.fillStyle=starTimer>0?"#fff176":"#f83c3c"; g.font="700 "+Math.max(8,Math.min(11,cell*0.35))+"px 'Courier New',monospace"; g.textAlign="right";
+    g.fillText(starTimer>0?"OVERFLOW OK":"RETURN IN "+starGrace.toFixed(1)+"s",ox+boardW-3,boundary-4);
+  }
+  if(expandLevel>0){ g.strokeStyle="#38d038"; g.lineWidth=2; g.beginPath(); g.moveTo(ox,oy); g.lineTo(ox+boardW,oy); g.stroke(); }
+  g.fillStyle="#fff"; g.font="700 11px 'Courier New',monospace"; g.textAlign="left"; g.fillText("NEXT",PX+6,PYY+14);
+  if(P.next){ const ns=Math.min(14,cell*0.7); for(const [c,r] of SHAPES[P.next][0]){ const x=PX+6+c*ns,y=PYY+20+r*ns; if(P.nextGold)drawGoldBlock(x,y,ns-1,700+r*4+c); else block3d(x,y,ns-1,PCOL[P.next]); } }
+  const leftSpace=ox-PX, rightSpace=PX+PWD-(ox+boardW), useRight=rightSpace>=leftSpace;
+  const ruleW=(useRight?rightSpace:leftSpace)-12;
+  if(ruleW>=74){ const rx=useRight?ox+boardW+7:PX+6, ry=useRight?PYY+9:PYY+62; renderRuleText(rx,ry,ruleW-4,PVH-(ry-PYY)-8); }
+  g.restore();
+  g.strokeStyle="#000"; g.lineWidth=2; g.strokeRect(PX+1,PYY,PWD-2,PVH);
+  g.textAlign="center";
+  for(const fl of floats){ g.globalAlpha=Math.max(0,fl.life);
+    g.fillStyle=fl.color; g.font="700 15px 'Courier New',monospace"; let fx=fl.x,fy=fl.y;
+    if(fl.toTimer){ const t=1-fl.life; fx=fl.x+(W/2-fl.x)*t*t; fy=fl.y+((TBy+14)-fl.y)*t*t; }
+    g.fillText(fl.text,fx,fy); }
+  g.globalAlpha=1;
+}
+'''+s[b:]
+
+          p.write_text(s,encoding='utf-8')
+          PY
+
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          js=s.split('<script>',1)[1].split('</script>',1)[0]
+          Path('/tmp/game.js').write_text(js,encoding='utf-8')
+          required=['starDuration:10','item:"star"','function activateStar','function drawGoldBlock','GOLD LINE ×2','updateStarState(STEP)']
+          missing=[x for x in required if x not in s]
+          if missing: raise SystemExit('missing: '+', '.join(missing))
+          PY
+          node --check /tmp/game.js
+          git diff --check
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Add 10-second star mode, rules panel, and gold shine"
+          git push
