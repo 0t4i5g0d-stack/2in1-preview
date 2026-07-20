@@ -19,36 +19,12 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import base64
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
           a=s.index('function lockPiece(){')
           b=s.index('function ensureSpawnRoom',a)
-          replacement='''function lockPiece(){
-  const color=P.cur.gold?GOLD:PCOL[P.cur.t];
-  for(const [c,r] of pieceCells(P.cur,P.cur.rot))
-    if(r>=0&&r<rows()&&c>=0&&c<PW) P.grid[r][c]=color;
-  addTime(CFG.addLock,"+"+CFG.addLock);
-  const result=clearLines(), cleared=result.count;
-  if(cleared>0){
-    ships+=cleared;
-    const base=CFG.addLine[cleared]||CFG.addLine[4];
-    const goldBonus=result.gold*CFG.addLine[1];
-    const add=base+goldBonus;
-    const goldLabel=result.gold>0?" GOLD x"+result.gold:"";
-    addTime(add,(cleared>=4?"TETRIS!":cleared+"LINE")+goldLabel+" +"+add);
-  }
-  P.cur=null; P.intakeT=CFG.intake;
-}
-function clearLines(){ let n=0,gold=0;
-  for(let r=rows()-1;r>=0;r--){
-    if(P.grid[r].every(x=>x)){
-      if(P.grid[r].some(x=>x===GOLD)) gold++;
-      P.grid.splice(r,1); P.grid.unshift(emptyRow()); n++; r++;
-    }
-  }
-  return {count:n,gold};
-}
-'''
+          replacement=base64.b64decode('ZnVuY3Rpb24gbG9ja1BpZWNlKCl7CiAgY29uc3QgY29sb3I9UC5jdXIuZ29sZD9HT0xEOlBDT0xbUC5jdXIudF07CiAgZm9yKGNvbnN0IFtjLHJdIG9mIHBpZWNlQ2VsbHMoUC5jdXIsUC5jdXIucm90KSkKICAgIGlmKHI+PTAmJnI8cm93cygpJiZjPj0wJiZjPFBXKSBQLmdyaWRbcl1bY109Y29sb3I7CiAgYWRkVGltZShDRkcuYWRkTG9jaywiKyIrQ0ZHLmFkZExvY2spOwogIGNvbnN0IHJlc3VsdD1jbGVhckxpbmVzKCksIGNsZWFyZWQ9cmVzdWx0LmNvdW50OwogIGlmKGNsZWFyZWQ+MCl7CiAgICBzaGlwKz1jbGVhcmVkOwogICAgY29uc3QgYmFzZT1DRkcuYWRkTGluZVtjbGVhcmVkXXx8Q0ZHLmFkZExpbmVbNF07CiAgICBjb25zdCBnb2xkQm9udXM9cmVzdWx0LmdvbGQqQ0ZHLmFkZExpbmVbMV07CiAgICBjb25zdCBhZGQ9YmFzZStnb2xkQm9udXM7CiAgICBjb25zdCBnb2xkTGFiZWw9cmVzdWx0LmdvbGQ+MD8iIEdPTEQgeCIrcmVzdWx0LmdvbGQ6IiI7CiAgICBhZGRUaW1lKGFkZCwoY2xlYXJlZD49ND8iVEVUUklTISI6Y2xlYXJlZCsiTElORSIpK2dvbGRMYWJlbCsiICsiK2FkZCk7CiAgfQogIFAuY3VyPW51bGw7IFAuaW50YWtlVD1DRkcuaW50YWtlOwp9CmZ1bmN0aW9uIGNsZWFyTGluZXMoKXsgbGV0IG49MCxnb2xkPTA7CiAgZm9yKGxldCByPXJvd3MoKS0xO3I+PTA7ci0tKXsKICAgIGlmKFAuZ3JpZFtyXS5ldmVyeSh4PT54KSl7CiAgICAgIGlmKFAuZ3JpZFtyXS5zb21lKHg9Png9PT1HT0xEKSkKICAgICAgICBnb2xkKys7CiAgICAgIFAuZ3JpZC5zcGxpY2UociwxKTsgUC5ncmlkLnVuc2hpZnQoZW1wdHlSb3coKSk7IG4rKzsgcisrOwogICAgfQogIH0KICByZXR1cm4ge2NvdW50Om4sZ29sZH07Cn0K').decode('utf-8')
           s=s[:a]+replacement+s[b:]
           p.write_text(s,encoding='utf-8')
           PY
