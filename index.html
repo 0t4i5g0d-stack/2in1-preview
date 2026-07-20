@@ -165,7 +165,7 @@ function lockPiece(){
   addTime(CFG.addLock,"+"+CFG.addLock);
   const result=clearLines(), cleared=result.count;
   if(cleared>0){
-    ship+=cleared;
+    ships+=cleared;
     const base=CFG.addLine[cleared]||CFG.addLine[4];
     const goldBonus=result.gold*CFG.addLine[1];
     const add=base+goldBonus;
@@ -303,6 +303,12 @@ function updateAction(dt,f){
   const col=Math.floor(A.x/TILE), it=L.item[col];
   if(it==="cp") A.cpx=col*TILE; else if(it==="goal") win();
 }
+function releaseBlockItem(b,q){
+  if(b.used||!b.item) return;
+  b.used=true;
+  if(b.item==="mush") ents.push({type:"mush",x:q.cx,y:q.y,vy:-160,dir:1,alive:true,anim:0});
+  else if(b.item==="coin") ents.push({type:"coin",x:q.cx,y:q.y,vy:-260,dir:0,alive:true,anim:0});
+}
 function resolveBlocks(){
   const pl=A.x-A.w/2, pr=A.x+A.w/2, pt=A.y-A.h, pb=A.y;
   for(let i=L.blocks.length-1;i>=0;i--){
@@ -311,18 +317,17 @@ function resolveBlocks(){
     if(pr<=bx||pl>=br||pb<=by||pt>=bb) continue;
     const ox=Math.min(pr,br)-Math.max(pl,bx), oy=Math.min(pb,bb)-Math.max(pt,by);
     if(ox<oy){ if(A.x<q.cx) A.x-=ox; else A.x+=ox; continue; }
-    if(A.y-A.h/2 < by+TILE/2){                 // 上に乗る＝着地
-      if(b.type==="brick" && A.hipDropping){    // ヒップドロップで踏み割る
+    if(A.y-A.h/2 < by+TILE/2){
+      if(A.hipDropping){
+        releaseBlockItem(b,q);
         L.blocks.splice(i,1);
-        A.hipDropping=false; A.hipLanded=true;  // 割って通過（下の地面へ落ちる）
+        A.hipDropping=false; A.hipLanded=true;
       } else {
         A.y=by; A.vy=0; A.onGround=true;
-        if(A.hipDropping){ A.hipDropping=false; A.hipLanded=true; }
       }
-    } else {                                    // 下から叩く
+    } else {
       A.y=bb+A.h; A.vy=0;
-      if(b.type!=="brick" && !b.used){ b.used=true; if(b.item==="mush")
-        ents.push({type:"mush",x:q.cx,y:by,vy:-160,dir:1,alive:true,anim:0}); }
+      if(b.type!=="brick") releaseBlockItem(b,q);
     }
   }
 }
@@ -339,7 +344,7 @@ function updateEntities(dt){
   for(const e of ents){ if(!e.alive)continue;
     e.anim+=dt;
     const eW=TILE*0.7, eH=TILE*0.7;
-    const spd = e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :
+    const spd = e.type==="coin"?0 : e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :
                 e.state==="shellMoving"?CFG.shellSpeed : e.state==="shell"?0 : CFG.nokSpd;
     const avoidPit = !(e.type==="nok" && e.state==="shellMoving");  // 動く甲羅は穴に落ちる
     e.vy+=CFG.grav*dt;
@@ -359,6 +364,7 @@ function updateEntities(dt){
     if(Math.abs(e.x-A.x) < (eW/2+A.w/2) && (A.y> e.y-eH) && (A.y-A.h < e.y)){
       const stomp = A.vy>0 && A.py <= e.y-eH*0.4;
       if(e.type==="mush"){ grow(); e.alive=false; }
+      else if(e.type==="coin"){ P.nextGold=true; e.alive=false; addFloat("GOLD NEXT",PX+PWD*0.5,PYY+PVH*0.3,GOLD); }
       else if(e.type==="foe"){
         if(stomp){ e.alive=false; A.vy=-CFG.stompBounce; } else applyDamage();
       } else if(e.type==="nok"){
@@ -444,6 +450,11 @@ function drawMush(x,yfoot){ const s=TILE*0.7, cap=s*0.6;
   g.fillStyle="#fff"; g.beginPath(); g.arc(x-cap*0.45,yfoot-s*0.6,cap*0.22,0,7); g.arc(x+cap*0.45,yfoot-s*0.6,cap*0.22,0,7); g.fill();
   g.fillStyle="#f8d0a0"; g.fillRect(x-s*0.28,yfoot-s*0.4,s*0.56,s*0.4);
   g.fillStyle="#000"; g.fillRect(x-s*0.14,yfoot-s*0.3,s*0.07,s*0.12); g.fillRect(x+s*0.07,yfoot-s*0.3,s*0.07,s*0.12); }
+function drawCoin(x,yfoot,t){ const s=TILE*0.5, w=Math.max(4,Math.abs(Math.cos(t*8))*s);
+  g.fillStyle=GOLD; g.beginPath(); g.ellipse(x,yfoot-s*0.5,w*0.5,s*0.5,0,0,7); g.fill();
+  g.strokeStyle="#9a6a00"; g.lineWidth=2; g.stroke();
+  g.fillStyle="rgba(255,255,255,.65)"; g.fillRect(x-w*0.18,yfoot-s*0.78,Math.max(2,w*0.12),s*0.5);
+}
 function drawFoe(x,yfoot,t){ const s=TILE*0.7, wob=Math.sin(t*8)*2;
   g.fillStyle="#8a4a10"; g.beginPath(); g.arc(x,yfoot-s*0.5,s*0.5,Math.PI,0); g.fill();
   g.fillRect(x-s*0.5,yfoot-s*0.5,s,s*0.4);
@@ -539,6 +550,7 @@ function renderAction(){
     if(b.type==="brick") brickBlock(q.x,q.y,BLOCK); else qbox(q.x,q.y,BLOCK,b.used); }
   for(const e of ents){
     if(e.type==="mush") drawMush(e.x,e.y);
+    else if(e.type==="coin") drawCoin(e.x,e.y,e.anim);
     else if(e.type==="foe") drawFoe(e.x,e.y,e.anim);
     else if(e.type==="nok"){ if(e.state==="walk") drawNokWalk(e.x,e.y,e.anim,e.dir); else drawShell(e.x,e.y,e.state==="shellMoving"); }
   }
