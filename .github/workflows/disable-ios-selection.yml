@@ -65,3 +65,5 @@ for(const type of ["contextmenu","selectstart","dragstart"]){
           git rm .github/workflows/disable-ios-selection.yml
           git commit -m "Prevent iOS long-press selection in game"
           git push
+
+# Triggered after creation so GitHub recognizes the workflow on the default branch.
