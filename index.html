@@ -159,16 +159,31 @@ function collide(p,dc,dr,rot){
     if(rr>=0 && P.grid[rr][cc]) return true; } return false;
 }
 function lockPiece(){
+  const color=P.cur.gold?GOLD:PCOL[P.cur.t];
   for(const [c,r] of pieceCells(P.cur,P.cur.rot))
-    if(r>=0&&r<rows()&&c>=0&&c<PW) P.grid[r][c]=PCOL[P.cur.t];
+    if(r>=0&&r<rows()&&c>=0&&c<PW) P.grid[r][c]=color;
   addTime(CFG.addLock,"+"+CFG.addLock);
-  const cleared=clearLines();
-  if(cleared>0){ ships+=cleared; const add=CFG.addLine[cleared]||CFG.addLine[4];
-    addTime(add,(cleared>=4?"TETRIS! +":cleared+"LINE +")+add); }
+  const result=clearLines(), cleared=result.count;
+  if(cleared>0){
+    ship+=cleared;
+    const base=CFG.addLine[cleared]||CFG.addLine[4];
+    const goldBonus=result.gold*CFG.addLine[1];
+    const add=base+goldBonus;
+    const goldLabel=result.gold>0?" GOLD x"+result.gold:"";
+    addTime(add,(cleared>=4?"TETRIS!":cleared+"LINE")+goldLabel+" +"+add);
+  }
   P.cur=null; P.intakeT=CFG.intake;
 }
-function clearLines(){ let n=0;
-  for(let r=rows()-1;r>=0;r--){ if(P.grid[r].every(x=>x)){ P.grid.splice(r,1); P.grid.unshift(emptyRow()); n++; r++; } } return n; }
+function clearLines(){ let n=0,gold=0;
+  for(let r=rows()-1;r>=0;r--){
+    if(P.grid[r].every(x=>x)){
+      if(P.grid[r].some(x=>x===GOLD))
+        gold++;
+      P.grid.splice(r,1); P.grid.unshift(emptyRow()); n++; r++;
+    }
+  }
+  return {count:n,gold};
+}
 function ensureSpawnRoom(minEmpty){
   let hf=P.grid.findIndex(row=>row.some(x=>x));
   if(hf===-1) return;
