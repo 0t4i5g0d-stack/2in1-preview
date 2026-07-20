@@ -1,0 +1,39 @@
+name: Set starting time limit
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/set-time-limit.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-time-limit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Change starting time to 20 seconds
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("index.html")
+          content = path.read_text(encoding="utf-8")
+          old = "const CFG={ timeStart:35, timeCap:60, timeIdeal:40,"
+          new = "const CFG={ timeStart:20, timeCap:60, timeIdeal:40,"
+
+          if content.count(old) != 1:
+              raise SystemExit(f"Expected one timer setting, found {content.count(old)}")
+
+          path.write_text(content.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Change starting time limit to 20 seconds"
+          git push
