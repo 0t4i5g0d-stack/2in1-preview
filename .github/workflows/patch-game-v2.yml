@@ -1,4 +1,4 @@
-name: Patch line rewards
+name: Patch gold piece state
 
 on:
   push:
@@ -15,23 +15,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Update rewards
+      - name: Update game state
         run: |
           python - <<'PY'
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          old='addLine:{1:3,2:6,3:10,4:15}'
-          new='addLine:{1:5,2:10,3:15,4:20}'
-          if s.count(old)!=1:
-              raise SystemExit(f'expected one match, found {s.count(old)}')
-          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          pairs=[
+            ('const PCOL={I:"#3cbcfc",O:"#f8d800",T:"#b83ce8",S:"#38d038",Z:"#f83c3c",J:"#3858f8",L:"#f89838"};',
+             'const PCOL={I:"#3cbcfc",O:"#f8d800",T:"#b83ce8",S:"#38d038",Z:"#f83c3c",J:"#3858f8",L:"#f89838"};\nconst GOLD="#ffd700";'),
+            ('  L.blocks.push({col:58,row:GROUND-3,used:false,item:"mush"});',
+             '  L.blocks.push({col:58,row:GROUND-3,used:false,item:"mush"});\n  L.blocks.push({col:39,row:GROUND-3,used:false,item:"coin"});'),
+            ('next:null,cur:null,dropT:0',
+             'next:null,nextGold:false,cur:null,dropT:0'),
+            ('P.cur={t,rot:0,col:((PW-w)/2)|0,row:0}; P.dropT=0; P.hdir=0;',
+             'P.cur={t,rot:0,col:((PW-w)/2)|0,row:0,gold:P.nextGold}; P.nextGold=false; P.dropT=0; P.hdir=0;'),
+            ('if(P.cur){ for(const [c,r] of pieceCells(P.cur,P.cur.rot)){ if(r<0)continue; block3d(ox+c*cell,oy+r*cell,cell,PCOL[P.cur.t]); } }',
+             'if(P.cur){ const curColor=P.cur.gold?GOLD:PCOL[P.cur.t]; for(const [c,r] of pieceCells(P.cur,P.cur.rot)){ if(r<0)continue; block3d(ox+c*cell,oy+r*cell,cell,curColor); } }'),
+            ('if(P.next){ const s=Math.min(14,cell*0.7); for(const [c,r] of SHAPES[P.next][0]) block3d(PX+6+c*s,PYY+20+r*s,s-1,PCOL[P.next]); }',
+             'if(P.next){ const s=Math.min(14,cell*0.7), nextColor=P.nextGold?GOLD:PCOL[P.next]; for(const [c,r] of SHAPES[P.next][0]) block3d(PX+6+c*s,PYY+20+r*s,s-1,nextColor); }')
+          ]
+          for old,new in pairs:
+              if s.count(old)!=1:
+                  raise SystemExit(f'expected one match for {old[:40]!r}, found {s.count(old)}')
+              s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
           PY
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          Path('/tmp/game.js').write_text(s.split('<script>',1)[1].split('</script>',1)[0],encoding='utf-8')
+          PY
+          node --check /tmp/game.js
           git diff --check
       - name: Commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Update line clear rewards"
+          git commit -m "Add gold tetromino state and coin box"
           git push
