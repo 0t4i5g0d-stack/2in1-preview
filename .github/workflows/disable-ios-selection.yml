@@ -1,16 +1,16 @@
 name: Disable iOS selection callout
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/disable-ios-selection.yml
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   patch:
+    if: github.event.issue.title == '[automation] Apply iOS selection fix'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
           old_js = 'addEventListener("resize",fit); addEventListener("orientationchange",()=>setTimeout(fit,120));'
           new_js = '''addEventListener("resize",fit); addEventListener("orientationchange",()=>setTimeout(fit,120));
 for(const type of ["contextmenu","selectstart","dragstart"]){
-  cv.addEventListener(type,e=>e.preventDefault(),{passive:false});
+  document.addEventListener(type,e=>e.preventDefault(),{capture:true,passive:false});
 }'''
 
           if text.count(old_js) != 1:
@@ -66,4 +66,7 @@ for(const type of ["contextmenu","selectstart","dragstart"]){
           git commit -m "Prevent iOS long-press selection in game"
           git push
 
-# Triggered after creation so GitHub recognizes the workflow on the default branch.
+      - name: Close trigger issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue close "${{ github.event.issue.number }}" --comment "Applied the iOS long-press selection fix."
