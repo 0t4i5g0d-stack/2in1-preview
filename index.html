@@ -28,11 +28,12 @@ const CFG={ timeStart:20, timeCap:60, timeIdeal:40,
   addLock:1, addLine:{1:5,2:10,3:15,4:20},
   penPit:5, invuln:1.4,
   moveSpd:200, jumpV:650, grav:1500, worldBottom:640, stompBounce:300,
-  mushSpd:70, foeSpd:55, nokSpd:45, shellSpeed:260, hipDropSpeed:780,
+  mushSpd:70, starSpd:95, foeSpd:55, nokSpd:45, shellSpeed:260, hipDropSpeed:780,
+  starDuration:10, starGrace:5, starExtraRows:8,
   cols:10, rowsBase:20, expStep:4, expMax:3,
   fallInt:0.8, softInt:0.05, intake:0.6, dasDelay:0.16, dasRepeat:0.10 };
 const TILE=44;
-const BLOCK=TILE; // 地面1マス・ブロック1個・小さいプレイヤーを近い基準サイズに統一
+const BLOCK=TILE;
 const PW=CFG.cols;
 const ACTION_WORLD_H=(8+2)*TILE;
 
@@ -103,17 +104,15 @@ function buildLevel(){
   for(let c=0;c<L.len;c++){L.ground[c]=GROUND;L.ceil[c]=null;L.item[c]=null;}
   const pit=(a,b)=>{for(let c=a;c<=b;c++)L.ground[c]=null;};
   const ceil=(a,b,r)=>{for(let c=a;c<=b;c++)L.ceil[c]=r;};
-  // ?ボックス（キノコ）
   L.blocks.push({col:9,row:GROUND-3,used:false,item:"mush"});
-  L.blocks.push({col:58,row:GROUND-3,used:false,item:"mush"});
+  L.blocks.push({col:58,row:GROUND-3,used:false,item:"star"});
   L.blocks.push({col:39,row:GROUND-3,used:false,item:"coin"});
-  // レンガ足場（原作に近い大きさと高さ。ジャンプ力側で上に乗れるよう調整）
   L.blocks.push({col:12,row:GROUND-3,type:"brick"});
   L.blocks.push({col:72,row:GROUND-3,type:"brick"});
   pit(16,17); ceil(26,31,GROUND-1);
   L.item[34]="cp"; pit(45,45);
   L.foes=[22,36,52,68];
-  L.nok=[6,42,84];          // ノコノコ（6=開始直後で確実に見える位置）
+  L.nok=[6,42,84];
   L.item[90]="goal"; L.goalCol=90;
   return L;
 }
@@ -135,8 +134,10 @@ function emptyRow(){return Array(PW).fill(null);}
 /* ===== STATE ===== */
 let state="title";
 let L,P,A,timer,isBig,expandLevel,ents,floats,flash,elapsed,deaths,ships,hits,loseReason,anim=0;
+let starTimer=0,starGraceTimer=0,starExtraRows=0;
 function reset(){
   L=buildLevel(); timer=CFG.timeStart; isBig=false; expandLevel=0;
+  starTimer=0; starGraceTimer=0; starExtraRows=0;
   elapsed=0;deaths=0;ships=0;hits=0;loseReason="";floats=[];flash=0; ents=[];
   A={x:2*TILE,y:GROUND*TILE,py:GROUND*TILE,vy:0,onGround:true,crouch:false,face:1,cpx:2*TILE,
      invuln:0,anim:0,w:TILE*0.62,h:TILE*0.78,hipDropping:false,hipLanded:false};
@@ -150,6 +151,10 @@ function spawnPiece(){
   const t=P.next; P.next=P.bag.length?P.bag.pop():(P.bag=newBag()).pop();
   const cells=SHAPES[t][0], w=Math.max(...cells.map(c=>c[0]))+1;
   P.cur={t,rot:0,col:((PW-w)/2)|0,row:0,gold:P.nextGold}; P.nextGold=false; P.dropT=0; P.hdir=0;
+  let guard=0;
+  while(collide(P.cur,0,0,P.cur.rot)&&(starTimer>0||starGraceTimer>0)&&guard++<CFG.starExtraRows){
+    P.grid.unshift(emptyRow()); starExtraRows++; P.cur.row++;
+  }
   if(collide(P.cur,0,0,P.cur.rot)) gameOver("積みあがってゲームオーバー");
 }
 function pieceCells(p,rot){return SHAPES[p.t][rot].map(([c,r])=>[p.col+c,p.row+r]);}
@@ -177,8 +182,7 @@ function lockPiece(){
 function clearLines(){ let n=0,gold=0;
   for(let r=rows()-1;r>=0;r--){
     if(P.grid[r].every(x=>x)){
-      if(P.grid[r].some(x=>x===GOLD))
-        gold++;
+      if(P.grid[r].some(x=>x===GOLD)) gold++;
       P.grid.splice(r,1); P.grid.unshift(emptyRow()); n++; r++;
     }
   }
@@ -206,15 +210,49 @@ function grow(){
 function shrinkToSmall(){
   isBig=false; expandLevel=0;
   if(rows()>CFG.rowsBase) P.grid.splice(0, rows()-CFG.rowsBase);
+  starTimer=0; starGraceTimer=0; starExtraRows=0;
   ensureSpawnRoom(2);
   P.cur=null; P.intakeT=CFG.intake;
   A.invuln=CFG.invuln; addFloat("SMALL 枠リセット",PX+PWD*0.5,PYY+PVH*0.3,"#f83c3c");
 }
-function applyDamage(){ if(A.invuln>0)return;
+function applyDamage(){ if(starTimer>0||A.invuln>0)return;
   if(isBig) shrinkToSmall(); else gameOver("やられた"); hits++; }
 function addTime(sec,label){ timer=Math.min(CFG.timeCap,timer+sec); flash=0.25;
   addFloat(label,PX+PWD*0.5,PYY+PVH*0.5,"#f8d800",true); }
 function addFloat(text,x,y,color,toTimer){ floats.push({text,x,y,color,life:1.0,vy:-24,toTimer:!!toTimer}); }
+function activateStar(){
+  if(starExtraRows===0){
+    starExtraRows=CFG.starExtraRows;
+    for(let i=0;i<starExtraRows;i++) P.grid.unshift(emptyRow());
+    if(P.cur) P.cur.row+=starExtraRows;
+  }
+  starTimer=CFG.starDuration; starGraceTimer=0;
+  addFloat("STAR "+CFG.starDuration+"s",PX+PWD*0.5,PYY+PVH*0.30,"#fff176");
+}
+function starOverflowClear(){
+  if(starExtraRows<=0)return true;
+  const lockedClear=P.grid.slice(0,starExtraRows).every(row=>row.every(v=>!v));
+  const activeClear=!P.cur||pieceCells(P.cur,P.cur.rot).every(([,r])=>r>=starExtraRows);
+  return lockedClear&&activeClear;
+}
+function finishStarOverflow(){
+  if(starExtraRows<=0)return;
+  if(!starOverflowClear()){ gameOver("スター終了：枠外にブロック"); return; }
+  P.grid.splice(0,starExtraRows);
+  if(P.cur)P.cur.row-=starExtraRows;
+  starExtraRows=0; starGraceTimer=0;
+  addFloat("SAFE",PX+PWD*0.5,PYY+PVH*0.30,"#38d038");
+}
+function updateStar(dt){
+  if(starTimer>0){
+    starTimer=Math.max(0,starTimer-dt);
+    if(starTimer===0){ starGraceTimer=CFG.starGrace; addFloat("枠内へ "+CFG.starGrace+"s",PX+PWD*0.5,PYY+PVH*0.30,"#f83c3c"); }
+  } else if(starGraceTimer>0){
+    if(starOverflowClear()){ finishStarOverflow(); return; }
+    starGraceTimer=Math.max(0,starGraceTimer-dt);
+    if(starGraceTimer===0)finishStarOverflow();
+  }
+}
 
 function updatePuzzle(dt,f){
   if(!P.cur){ P.intakeT-=dt; if(P.intakeT<=0) spawnPiece(); return; }
@@ -257,13 +295,10 @@ function canOccupyPlayerRect(x,footY,w,h){
 }
 function updateAction(dt,f){
   A.hipLanded=false;
-  // ヒップドロップ始動：空中で↓を押した瞬間
   if(!A.onGround && f.pD && !A.hipDropping){ A.hipDropping=true; }
-  // BIGは立つと約2マス。しゃがみ時は1マスの通路に余裕をもって収まる。
   const standH=isBig?TILE*1.72:TILE*0.88, crouchH=isBig?TILE*0.82:TILE*0.66;
   const w=isBig?TILE*0.82:TILE*0.64;
   const wantsCrouch=f.down||A.hipDropping;
-  // 狭い場所で↓を離しても、頭上が空くまではしゃがんだままにする。
   A.crouch=wantsCrouch || (!wantsCrouch && !canOccupyPlayerRect(A.x,A.y,w,standH));
   const h=A.crouch?crouchH:standH;
   A.w=w; A.h=h;
@@ -273,14 +308,12 @@ function updateAction(dt,f){
   const nx=Math.max(TILE*0.5,Math.min((L.len-0.5)*TILE,A.x+vx*dt));
   const nextCeiling=ceilingBottomAcross(nx-w/2+0.5,nx+w/2-0.5);
   const top=A.y-h;
-  // しゃがめば入れる通路は通し、体が天井に重なる場合だけ横移動を止める。
   if(nextCeiling===null || top>=nextCeiling-0.01) A.x=nx;
   if(f.pU && A.onGround){ A.vy=-CFG.jumpV; A.onGround=false; A.hipDropping=false; }
   A.py=A.y;
   const prevTop=A.y-A.h;
   if(A.hipDropping){ A.vy=CFG.hipDropSpeed; A.y+=A.vy*dt; }
   else { A.vy+=CFG.grav*dt; A.y+=A.vy*dt; }
-  // 天井を下から上へ通り抜けない。頭が下面に触れた位置で止める。
   if(A.vy<0){
     const ceiling=ceilingBottomAcross(A.x-A.w/2+0.5,A.x+A.w/2-0.5);
     const newTop=A.y-A.h;
@@ -290,7 +323,6 @@ function updateAction(dt,f){
   }
   const gy=groundAt(A.x);
   const wasHip=A.hipDropping;
-  // 地面の上側を通過した時だけ着地する。穴の向こう側へ下から吸着するのを防ぐ。
   if(gy!==null && A.py<=gy && A.y>=gy && A.vy>=0){ A.y=gy; A.vy=0; A.onGround=true;
     if(wasHip){ A.hipDropping=false; A.hipLanded=true; }
   } else A.onGround=false;
@@ -308,6 +340,7 @@ function releaseBlockItem(b,q){
   b.used=true;
   if(b.item==="mush") ents.push({type:"mush",x:q.cx,y:q.y,vy:-160,dir:1,alive:true,anim:0});
   else if(b.item==="coin") ents.push({type:"coin",x:q.cx,y:q.y,vy:-260,dir:0,alive:true,anim:0});
+  else if(b.item==="star") ents.push({type:"star",x:q.cx,y:q.y,vy:-300,dir:1,alive:true,anim:0});
 }
 function resolveBlocks(){
   const pl=A.x-A.w/2, pr=A.x+A.w/2, pt=A.y-A.h, pb=A.y;
@@ -332,7 +365,6 @@ function resolveBlocks(){
   }
 }
 function updateEntities(dt){
-  // ヒップドロップ着地：着地点付近の敵を確実に撃破
   if(A.hipLanded){
     let defeated=0;
     for(const e of ents){ if(!e.alive)continue;
@@ -344,31 +376,32 @@ function updateEntities(dt){
   for(const e of ents){ if(!e.alive)continue;
     e.anim+=dt;
     const eW=TILE*0.7, eH=TILE*0.7;
-    const spd = e.type==="coin"?0 : e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :
+    const spd = e.type==="coin"?0 : e.type==="star"?CFG.starSpd : e.type==="mush"?CFG.mushSpd : e.type==="foe"?CFG.foeSpd :
                 e.state==="shellMoving"?CFG.shellSpeed : e.state==="shell"?0 : CFG.nokSpd;
-    const avoidPit = !(e.type==="nok" && e.state==="shellMoving");  // 動く甲羅は穴に落ちる
+    const avoidPit = !(e.type==="nok" && e.state==="shellMoving");
     e.vy+=CFG.grav*dt;
     if(spd>0){
       const nx=e.x+e.dir*spd*dt;
       if(avoidPit){ const ahead=groundAt(nx+e.dir*eW*0.5);
         if(ahead===null || nx<TILE*0.5 || nx>(L.len-0.5)*TILE) e.dir*=-1; else e.x=nx;
-      } else { if(nx<TILE*0.5 || nx>(L.len-0.5)*TILE) e.dir*=-1; else e.x=nx; }  // 壁だけで跳ね返る
+      } else { if(nx<TILE*0.5 || nx>(L.len-0.5)*TILE) e.dir*=-1; else e.x=nx; }
     }
     const prevY=e.y;
     e.y+=e.vy*dt;
     const gy=groundAt(e.x);
-    // 地面を上から横切った時だけ着地。穴を越えた先で下から吸着しない。
-    if(gy!==null && prevY<=gy && e.y>=gy && e.vy>=0){ e.y=gy; e.vy=0; }
+    if(gy!==null && prevY<=gy && e.y>=gy && e.vy>=0){ e.y=gy; e.vy=e.type==="star"?-300:0; }
     if(e.y>GH+40){ e.alive=false; continue; }
-    // プレイヤーと接触
     if(Math.abs(e.x-A.x) < (eW/2+A.w/2) && (A.y> e.y-eH) && (A.y-A.h < e.y)){
       const stomp = A.vy>0 && A.py <= e.y-eH*0.4;
       if(e.type==="mush"){ grow(); e.alive=false; }
       else if(e.type==="coin"){ P.nextGold=true; e.alive=false; addFloat("GOLD NEXT",PX+PWD*0.5,PYY+PVH*0.3,GOLD); }
+      else if(e.type==="star"){ activateStar(); e.alive=false; }
       else if(e.type==="foe"){
-        if(stomp){ e.alive=false; A.vy=-CFG.stompBounce; } else applyDamage();
+        if(starTimer>0){ e.alive=false; addFloat("STAR撃破",AX+AW*0.5,AY+44,"#fff176"); }
+        else if(stomp){ e.alive=false; A.vy=-CFG.stompBounce; } else applyDamage();
       } else if(e.type==="nok"){
-        if(e.state==="walk"){
+        if(starTimer>0){ e.alive=false; addFloat("STAR撃破",AX+AW*0.5,AY+44,"#fff176"); }
+        else if(e.state==="walk"){
           if(stomp){ e.state="shell"; e.dir=0; A.vy=-CFG.stompBounce; } else applyDamage();
         } else if(e.state==="shell"){
           if(stomp){ e.state="shellMoving"; e.dir=(A.x<e.x)?1:-1; A.vy=-CFG.stompBounce; } else applyDamage();
@@ -378,8 +411,6 @@ function updateEntities(dt){
       }
     }
   }
-
-  // 動いている甲羅が敵に当たったら撃破する。
   let shellDefeats=0;
   for(const shell of ents){
     if(!shell.alive || shell.type!=="nok" || shell.state!=="shellMoving") continue;
@@ -394,7 +425,6 @@ function updateEntities(dt){
     }
   }
   if(shellDefeats>0) addFloat("甲羅撃破！ x"+shellDefeats,AX+AW*0.5,AY+44,"#f8d800");
-
   ents=ents.filter(e=>e.alive);
 }
 
@@ -405,7 +435,7 @@ let last=performance.now(),acc=0; const STEP=1/60;
 function tick(now){ requestAnimationFrame(tick);
   let dt=(now-last)/1000; last=now; if(dt>0.1)dt=0.1; acc+=dt; anim+=dt;
   while(acc>=STEP){
-    if(state==="play"){ sampleInput(); updateAction(STEP,frame); updateEntities(STEP); updatePuzzle(STEP,frame);
+    if(state==="play"){ sampleInput(); updateAction(STEP,frame); updateEntities(STEP); updatePuzzle(STEP,frame); updateStar(STEP);
       timer-=STEP; elapsed+=STEP; if(timer<=0){timer=0;gameOver("時間切れ");}
       flash=Math.max(0,flash-STEP);
       for(const fl of floats){ fl.y+=fl.vy*STEP; fl.life-=STEP*0.8; }
@@ -422,6 +452,21 @@ function block3d(x,y,s,color){ g.fillStyle=color; g.fillRect(x,y,s,s);
   g.fillStyle="rgba(255,255,255,.55)"; g.fillRect(x,y,s,d); g.fillRect(x,y,d,s);
   g.fillStyle="rgba(0,0,0,.38)"; g.fillRect(x,y+s-d,s,d); g.fillRect(x+s-d,y,d,s);
   g.fillStyle="rgba(255,255,255,.85)"; const q=Math.max(2,s*0.16); g.fillRect(x+d*0.9,y+d*0.9,q,q); }
+function drawGoldBlock(x,y,s,phase=0){
+  const pulse=0.5+0.5*Math.sin(anim*5+phase*0.17);
+  block3d(x,y,s,"hsl(46 100% "+(52+Math.round(pulse*11))+"%)");
+  g.save(); g.beginPath(); g.rect(x+1,y+1,s-2,s-2); g.clip();
+  const sweep=((anim*0.9+phase*0.071)%1.6)-0.3;
+  g.translate(x+sweep*s,y+s*0.5); g.rotate(-Math.PI/4);
+  g.globalAlpha=0.22+0.34*pulse; g.fillStyle="#fff"; g.fillRect(-s*0.09,-s,s*0.18,s*2);
+  g.restore();
+  const twinkle=0.5+0.5*Math.sin(anim*8+phase*1.7);
+  if(twinkle>0.70){
+    const a=(twinkle-0.70)/0.30, sx=x+s*0.78, sy=y+s*0.20, r=s*(0.07+0.09*a);
+    g.save(); g.globalAlpha=0.45+0.55*a; g.strokeStyle="#fff"; g.lineWidth=Math.max(1,s*0.045);
+    g.beginPath(); g.moveTo(sx-r,sy); g.lineTo(sx+r,sy); g.moveTo(sx,sy-r); g.lineTo(sx,sy+r); g.stroke(); g.restore();
+  }
+}
 function brick(x,y,s){ g.fillStyle=BRICK; g.fillRect(x,y,s,s);
   g.strokeStyle=MORTAR; g.lineWidth=Math.max(1,s*0.05);
   g.beginPath(); g.moveTo(x,y+s/2); g.lineTo(x+s,y+s/2); g.moveTo(x+s/2,y); g.lineTo(x+s/2,y+s/2);
@@ -455,6 +500,28 @@ function drawCoin(x,yfoot,t){ const s=TILE*0.5, w=Math.max(4,Math.abs(Math.cos(t
   g.strokeStyle="#9a6a00"; g.lineWidth=2; g.stroke();
   g.fillStyle="rgba(255,255,255,.65)"; g.fillRect(x-w*0.18,yfoot-s*0.78,Math.max(2,w*0.12),s*0.5);
 }
+function traceStar(r){
+  g.beginPath();
+  for(let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, rr=i%2===0?r:r*0.46;
+    const x=Math.cos(a)*rr,y=Math.sin(a)*rr; if(i===0)g.moveTo(x,y);else g.lineTo(x,y); }
+  g.closePath();
+}
+function drawStarItem(x,yfoot,t){
+  const r=TILE*0.38;
+  g.save(); g.translate(x,yfoot-r*1.05); g.rotate(Math.sin(t*5)*0.18);
+  g.shadowColor="#fff176"; g.shadowBlur=10; g.fillStyle="hsl("+((t*180)%360)+" 95% 62%)";
+  traceStar(r); g.fill(); g.shadowBlur=0; g.strokeStyle="#fff"; g.lineWidth=2; g.stroke();
+  g.fillStyle="#111"; g.fillRect(-r*0.32,-r*0.15,r*0.13,r*0.24); g.fillRect(r*0.19,-r*0.15,r*0.13,r*0.24);
+  g.restore();
+}
+function drawStarAura(x,y,w,h){
+  g.save(); g.globalAlpha=0.24; g.fillStyle="hsl("+((anim*220)%360)+" 100% 65%)";
+  g.beginPath(); g.ellipse(x,y-h*0.5,w*0.9,h*0.7,0,0,Math.PI*2); g.fill();
+  g.globalAlpha=0.9; g.fillStyle="#fff";
+  for(let i=0;i<3;i++){ const a=anim*3+i*2.1, sx=x+Math.cos(a)*w*0.8, sy=y-h*0.5+Math.sin(a)*h*0.55;
+    g.fillRect(sx-1,sy-4,2,8); g.fillRect(sx-4,sy-1,8,2); }
+  g.restore();
+}
 function drawFoe(x,yfoot,t){ const s=TILE*0.7, wob=Math.sin(t*8)*2;
   g.fillStyle="#8a4a10"; g.beginPath(); g.arc(x,yfoot-s*0.5,s*0.5,Math.PI,0); g.fill();
   g.fillRect(x-s*0.5,yfoot-s*0.5,s,s*0.4);
@@ -464,31 +531,25 @@ function drawFoe(x,yfoot,t){ const s=TILE*0.7, wob=Math.sin(t*8)*2;
   g.fillStyle="#000"; g.fillRect(x-s*0.34,yfoot-s*0.56,s*0.28,3); g.fillRect(x+s*0.06,yfoot-s*0.56,s*0.28,3); }
 function drawNokWalk(x,yfoot,t,dir){
   const s=TILE*0.78, step=Math.sin(t*9)*s*0.07, f=dir||1;
-  // 二足歩行の脚と靴
   g.fillStyle="#f2c96d";
   g.fillRect(x-s*0.23+step,yfoot-s*0.31,s*0.15,s*0.25);
   g.fillRect(x+s*0.08-step,yfoot-s*0.31,s*0.15,s*0.25);
   g.fillStyle="#b86a24";
   g.fillRect(x-s*0.32+step,yfoot-s*0.08,s*0.27,s*0.08);
   g.fillRect(x+s*0.05-step,yfoot-s*0.08,s*0.27,s*0.08);
-  // 胴体と腕
   g.fillStyle="#f2c96d"; g.fillRect(x-s*0.20,yfoot-s*0.62,s*0.40,s*0.36);
   g.fillRect(x+f*s*0.13,yfoot-s*0.55,f*s*0.24,s*0.10);
-  // 背中の甲羅
   g.fillStyle="#38a838"; g.beginPath(); g.ellipse(x-f*s*0.16,yfoot-s*0.55,s*0.31,s*0.34,0,0,7); g.fill();
   g.strokeStyle="#246824"; g.lineWidth=2;
   g.beginPath();
   g.moveTo(x-f*s*0.16,yfoot-s*0.86); g.lineTo(x-f*s*0.16,yfoot-s*0.25);
   g.moveTo(x-f*s*0.39,yfoot-s*0.56); g.lineTo(x+f*s*0.07,yfoot-s*0.56);
   g.stroke();
-  // 首・頭・口先
   g.fillStyle="#f2c96d"; g.fillRect(x+f*s*0.10,yfoot-s*0.78,f*s*0.18,s*0.23);
   g.beginPath(); g.ellipse(x+f*s*0.25,yfoot-s*0.82,s*0.23,s*0.20,0,0,7); g.fill();
   g.fillRect(x+f*s*0.22,yfoot-s*0.76,f*s*0.23,s*0.11);
-  // 白目・黒目（進行方向を見る）
   g.fillStyle="#fff"; g.fillRect(x+f*s*0.24-(f<0?s*0.10:0),yfoot-s*0.91,s*0.11,s*0.10);
   g.fillStyle="#000"; g.fillRect(x+f*s*0.30-(f<0?s*0.08:0),yfoot-s*0.89,s*0.045,s*0.065);
-  // 甲羅の縁と口
   g.strokeStyle="#155818"; g.lineWidth=2; g.strokeRect(x-f*s*0.36,yfoot-s*0.69,s*0.38,s*0.27);
   g.fillStyle="#9b4f20"; g.fillRect(x+f*s*0.29-(f<0?s*0.17:0),yfoot-s*0.72,s*0.16,s*0.035);
 }
@@ -551,28 +612,67 @@ function renderAction(){
   for(const e of ents){
     if(e.type==="mush") drawMush(e.x,e.y);
     else if(e.type==="coin") drawCoin(e.x,e.y,e.anim);
+    else if(e.type==="star") drawStarItem(e.x,e.y,e.anim);
     else if(e.type==="foe") drawFoe(e.x,e.y,e.anim);
     else if(e.type==="nok"){ if(e.state==="walk") drawNokWalk(e.x,e.y,e.anim,e.dir); else drawShell(e.x,e.y,e.state==="shellMoving"); }
   }
+  if(starTimer>0)drawStarAura(A.x,A.y,A.w,A.h);
   if(!(A.invuln>0 && Math.floor(A.invuln*12)%2===0)) drawHero(A.x-A.w/2,A.y-A.h,A.w,A.h,A.face,A.crouch);
   g.restore();
   g.fillStyle="#fff"; g.font="700 11px 'Courier New',monospace"; g.textAlign="left";
   g.fillText(isBig?("BIG"+(expandLevel>1?" x"+expandLevel:"")):"SMALL",AX+6,AY+14);
   g.strokeStyle="#000"; g.lineWidth=2; g.strokeRect(AX+1,AY,AW-2,AVH);
 }
+function renderRulePanel(x,y,w,h){
+  const fs=Math.max(7,Math.min(11,Math.floor(w/12),Math.floor(h/25)));
+  const gap=fs*1.38;
+  const lines=[
+    ["RULE","#fff"],
+    ["固定 +1秒","#aaa"],
+    ["1/2/3/4 LINE","#fff"],
+    ["+5/+10/+15/+20秒","#f8d800"],
+    ["COIN → 次がGOLD",GOLD],
+    ["GOLD LINE ×2",GOLD],
+    ["STAR 10秒","#fff176"],
+    ["SIDE 接触で敵撃破","#5c94fc"],
+    ["STACK 枠外OK","#f8d800"],
+    ["終了後5秒で枠内へ","#f83c3c"],
+    ["HIP 箱/レンガ破壊","#aaa"]
+  ];
+  if(starTimer>0)lines.unshift(["★ "+starTimer.toFixed(1)+"秒","#fff176"]);
+  else if(starGraceTimer>0)lines.unshift(["RETURN "+starGraceTimer.toFixed(1)+"秒","#f83c3c"]);
+  let yy=y;
+  g.textAlign="left"; g.textBaseline="top"; g.font="700 "+fs+"px 'Courier New',monospace";
+  for(const [text,color] of lines){ if(yy+fs>y+h)break; g.fillStyle=color; g.fillText(text,x,yy); yy+=gap; }
+  g.textBaseline="alphabetic";
+}
 function renderPuzzle(){
   g.save(); g.beginPath(); g.rect(PX,PYY,PWD,PVH); g.clip();
   g.fillStyle="#101010"; g.fillRect(PX,PYY,PWD,PVH);
-  const R=rows(), cell=Math.max(6,Math.floor(Math.min((PWD-8)/PW, PVH/R)));
-  const boardW=PW*cell, boardH=R*cell, ox=PX+(PWD-boardW)/2, oy=PYY+(PVH-boardH)/2;
+  const R=rows(), panelW=Math.max(82,Math.min(154,PWD*0.31)), gap=8;
+  const boardAreaW=Math.max(PW*6,PWD-panelW-gap-8);
+  const cell=Math.max(6,Math.floor(Math.min(boardAreaW/PW,PVH/R)));
+  const boardW=PW*cell, boardH=R*cell;
+  const ox=PX+4+Math.max(0,(boardAreaW-boardW)/2), oy=PYY+(PVH-boardH)/2;
+  const panelX=ox+boardW+gap, panelRight=PX+PWD-4, actualPanelW=Math.max(60,panelRight-panelX);
   g.fillStyle="#000"; g.fillRect(ox-3,oy-3,boardW+6,boardH+6);
+  const overflowRows=Math.min(starExtraRows,R);
   for(let r=0;r<R;r++)for(let c=0;c<PW;c++){ const x=ox+c*cell,y=oy+r*cell;
-    g.fillStyle="#181818"; g.fillRect(x,y,cell,cell); g.strokeStyle="#242424"; g.lineWidth=1; g.strokeRect(x+.5,y+.5,cell-1,cell-1);
-    const v=P.grid[r][c]; if(v) block3d(x,y,cell,v); }
-  if(P.cur){ const curColor=P.cur.gold?GOLD:PCOL[P.cur.t]; for(const [c,r] of pieceCells(P.cur,P.cur.rot)){ if(r<0)continue; block3d(ox+c*cell,oy+r*cell,cell,curColor); } }
-  if(expandLevel>0){ g.strokeStyle="#38d038"; g.lineWidth=3; g.beginPath(); g.moveTo(ox,oy); g.lineTo(ox+boardW,oy); g.stroke(); }
-  g.fillStyle="#fff"; g.font="700 11px 'Courier New',monospace"; g.textAlign="left"; g.fillText("NEXT",PX+6,PYY+14);
-  if(P.next){ const s=Math.min(14,cell*0.7), nextColor=P.nextGold?GOLD:PCOL[P.next]; for(const [c,r] of SHAPES[P.next][0]) block3d(PX+6+c*s,PYY+20+r*s,s-1,nextColor); }
+    g.fillStyle=r<overflowRows?(starTimer>0?"rgba(255,215,0,.18)":"rgba(248,60,60,.16)"):"#181818";
+    g.fillRect(x,y,cell,cell); g.strokeStyle="#242424"; g.lineWidth=1; g.strokeRect(x+.5,y+.5,cell-1,cell-1);
+    const v=P.grid[r][c]; if(v){ if(v===GOLD)drawGoldBlock(x,y,cell,r*PW+c); else block3d(x,y,cell,v); }
+  }
+  if(overflowRows>0){ const by=oy+overflowRows*cell;
+    g.strokeStyle=starTimer>0?"#fff176":"#f83c3c"; g.lineWidth=3; g.beginPath(); g.moveTo(ox,by); g.lineTo(ox+boardW,by); g.stroke(); }
+  if(P.cur){ for(const [c,r] of pieceCells(P.cur,P.cur.rot)){ if(r<0)continue;
+    const x=ox+c*cell,y=oy+r*cell; if(P.cur.gold)drawGoldBlock(x,y,cell,700+c+r*PW); else block3d(x,y,cell,PCOL[P.cur.t]); } }
+  if(expandLevel>0){ const added=Math.min(R,starExtraRows+expandLevel*CFG.expStep),by=oy+added*cell;
+    g.strokeStyle="#38d038"; g.lineWidth=2; g.beginPath(); g.moveTo(ox,by); g.lineTo(ox+boardW,by); g.stroke(); }
+  g.fillStyle="#fff"; g.font="700 11px 'Courier New',monospace"; g.textAlign="left"; g.fillText("NEXT",panelX,PYY+14);
+  if(P.next){ const ps=Math.max(6,Math.min(14,cell*0.65));
+    for(const [c,r] of SHAPES[P.next][0]){ const x=panelX+c*ps,y=PYY+20+r*ps;
+      if(P.nextGold)drawGoldBlock(x,y,ps-1,900+c+r*4); else block3d(x,y,ps-1,PCOL[P.next]); } }
+  renderRulePanel(panelX,PYY+70,actualPanelW,PVH-74);
   g.restore();
   g.strokeStyle="#000"; g.lineWidth=2; g.strokeRect(PX+1,PYY,PWD-2,PVH);
   g.textAlign="center";
