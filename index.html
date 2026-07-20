@@ -24,7 +24,7 @@ function fit(){ const r=cv.getBoundingClientRect(); const dpr=Math.min(2,window.
 addEventListener("resize",fit); addEventListener("orientationchange",()=>setTimeout(fit,120));
 
 /* ===== CONFIG ===== */
-const CFG={ timeStart:35, timeCap:60, timeIdeal:40,
+const CFG={ timeStart:20, timeCap:60, timeIdeal:40,
   addLock:1, addLine:{1:3,2:6,3:10,4:15},
   penPit:5, invuln:1.4,
   moveSpd:200, jumpV:650, grav:1500, worldBottom:640, stompBounce:300,
