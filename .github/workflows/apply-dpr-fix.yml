@@ -1,0 +1,75 @@
+name: Apply DPR fix to PR 3
+
+on:
+  push:
+    branches:
+      - codex/index.html
+    paths:
+      - .github/workflows/apply-dpr-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply exact DPR and pointer-capture fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'let W=960,H=640;\nconst IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches || ("ontouchstart" in window);\ndocument.body.classList.toggle("touch-enabled",IS_TOUCH);\nfunction fit(){ const r=cv.getBoundingClientRect(); const dpr=Math.min(2,window.devicePixelRatio||1);\n  cv.width=Math.max(320,Math.round(r.width*dpr)); cv.height=Math.max(320,Math.round(r.height*dpr));',
+                  'let W=960,H=640,renderDpr=1;\nconst IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches || ("ontouchstart" in window);\ndocument.body.classList.toggle("touch-enabled",IS_TOUCH);\nfunction fit(){ const r=cv.getBoundingClientRect(); renderDpr=Math.min(2,window.devicePixelRatio||1);\n  cv.width=Math.max(320,Math.round(r.width*renderDpr)); cv.height=Math.max(320,Math.round(r.height*renderDpr));',
+                  'shared render DPR'
+              ),
+              (
+                  'e.preventDefault(); activePointers.set(e.pointerId,key); recompTouch(); touchControls.setPointerCapture(e.pointerId); },{passive:false});',
+                  'e.preventDefault(); activePointers.set(e.pointerId,key); recompTouch(); try{touchControls.setPointerCapture(e.pointerId);}catch(_){} },{passive:false});',
+                  'safe pointer capture'
+              ),
+              (
+                  'touchControls.style.setProperty("--touch-controls-height",(CTh/(window.devicePixelRatio||1))+"px");',
+                  'touchControls.style.setProperty("--touch-controls-height",(CTh/renderDpr)+"px");',
+                  'touch control height DPR'
+              ),
+          ]
+
+          for old, new, label in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 exact match, found {count}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          python - <<'PY'
+          from pathlib import Path
+          html = Path('index.html').read_text(encoding='utf-8')
+          if html.count('renderDpr') != 5:
+              raise SystemExit(f'unexpected renderDpr count: {html.count("renderDpr")}')
+          if 'try{touchControls.setPointerCapture(e.pointerId);}catch(_){}' not in html:
+              raise SystemExit('pointer capture guard missing')
+          script = html.split('<script>', 1)[1].split('</script>', 1)[0]
+          Path('/tmp/2in1-preview-index.js').write_text(script, encoding='utf-8')
+          PY
+
+          node --check /tmp/2in1-preview-index.js
+          git diff --check
+
+      - name: Commit only the intended index change and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git rm .github/workflows/apply-dpr-fix.yml
+          git commit -m "Align touch controls with canvas DPR"
+          git push origin HEAD:codex/index.html
