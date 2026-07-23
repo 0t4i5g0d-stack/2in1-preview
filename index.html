@@ -6,18 +6,36 @@
 <title>2 IN 1</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%;background:#000;overflow:hidden;font-family:"Courier New",monospace}
-  #stage{position:fixed;inset:0;width:100vw;height:100dvh;background:#000}
-  canvas{display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated}
+  html,body{height:100%;background:#000;overflow:hidden;font-family:"Courier New",monospace;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+  #stage{position:fixed;inset:0;width:100vw;height:100dvh;background:#000;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  canvas{display:block;width:100%;height:100%;touch-action:none;image-rendering:pixelated;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;-webkit-user-drag:none}
+  #touch-controls{position:absolute;right:0;bottom:0;left:0;display:none;height:var(--touch-controls-height);align-items:center;justify-content:space-around;background:#0a0a0a;border-top:1px solid #222;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  .touch-enabled #touch-controls{display:flex}
+  .control-group{display:flex;gap:clamp(18px,5vw,52px)}
+  .control-button{position:relative;width:clamp(64px,16vw,126px);aspect-ratio:1;border:2px solid #fff;border-radius:50%;background:#2a2a2a;touch-action:none;-webkit-appearance:none;appearance:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  .control-button::before{position:absolute;top:50%;left:50%;width:42%;height:46%;content:"";background:#fff;clip-path:polygon(100% 0,0 50%,100% 100%);transform:translate(-50%,-50%)}
+  .control-button[data-key="right"]::before{transform:translate(-50%,-50%) rotate(180deg)}
+  .control-button[data-key="up"]::before{transform:translate(-50%,-50%) rotate(90deg)}
+  .control-button[data-key="down"]::before{transform:translate(-50%,-50%) rotate(-90deg)}
+  .control-button.is-held{background:#f8d800}
+  .control-button.is-held::before{background:#000}
 </style>
 </head>
 <body>
-<div id="stage"><canvas id="c"></canvas></div>
+<div id="stage"><canvas id="c"></canvas><div id="touch-controls" aria-label="ゲーム操作">
+  <div class="control-group"><button class="control-button" type="button" data-key="left" aria-label="左へ移動"></button><button class="control-button" type="button" data-key="right" aria-label="右へ移動"></button></div>
+  <div class="control-group"><button class="control-button" type="button" data-key="up" aria-label="ジャンプ・回転"></button><button class="control-button" type="button" data-key="down" aria-label="しゃがむ・ドロップ"></button></div>
+</div></div>
 <script>
 "use strict";
 const cv=document.getElementById("c"), g=cv.getContext("2d");
+const touchControls=document.getElementById("touch-controls"), controlButtons=[...touchControls.querySelectorAll("[data-key]")];
+for(const type of ["contextmenu","selectstart","dragstart","dblclick"]){
+  document.addEventListener(type,event=>event.preventDefault(),{capture:true,passive:false});
+}
 let W=960,H=640;
 const IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches || ("ontouchstart" in window);
+document.body.classList.toggle("touch-enabled",IS_TOUCH);
 function fit(){ const r=cv.getBoundingClientRect(); const dpr=Math.min(2,window.devicePixelRatio||1);
   cv.width=Math.max(320,Math.round(r.width*dpr)); cv.height=Math.max(320,Math.round(r.height*dpr));
   W=cv.width; H=cv.height; g.imageSmoothingEnabled=false; }
@@ -66,7 +84,16 @@ function hitButton(x,y){ if(!BTN)return null;
   for(const key of ["left","right","up","down"]){const b=BTN[key];
     if((x-b.x)**2+(y-b.y)**2<=b.r*b.r) return key;} return null;}
 function recompTouch(){ touchH.left=touchH.right=touchH.up=touchH.down=false;
-  for(const k of activePointers.values()) touchH[k]=true;}
+  for(const k of activePointers.values()) touchH[k]=true;
+  for(const button of controlButtons) button.classList.toggle("is-held",touchH[button.dataset.key]); }
+function controlKeyAt(x,y){ const target=document.elementFromPoint(x,y); const button=target&&target.closest(".control-button");
+  return button&&touchControls.contains(button)?button.dataset.key:null; }
+touchControls.addEventListener("pointerdown",e=>{ const key=controlKeyAt(e.clientX,e.clientY); if(!key)return;
+  e.preventDefault(); activePointers.set(e.pointerId,key); recompTouch(); touchControls.setPointerCapture(e.pointerId); },{passive:false});
+touchControls.addEventListener("pointermove",e=>{ if(!activePointers.has(e.pointerId))return;
+  const key=controlKeyAt(e.clientX,e.clientY); if(key)activePointers.set(e.pointerId,key); else activePointers.delete(e.pointerId); recompTouch(); },{passive:false});
+const releaseControl=e=>{ if(activePointers.delete(e.pointerId))recompTouch(); };
+touchControls.addEventListener("pointerup",releaseControl); touchControls.addEventListener("pointercancel",releaseControl);
 cv.addEventListener("pointerdown",e=>{ e.preventDefault();
   if(state!=="play"){ activePointers.clear(); recompTouch(); startOrRestart(); return; }
   const p=toCanvas(e),k=hitButton(p.x,p.y);
@@ -83,6 +110,7 @@ function layout(){
   const portrait=H>=W*1.02;
   CTh=IS_TOUCH?(portrait?Math.min(H*0.20,260):Math.min(H*0.26,190)):0;
   CTx=0;CTy=H-CTh;CTw=W;
+  touchControls.style.setProperty("--touch-controls-height",(CTh/(window.devicePixelRatio||1))+"px");
   const availH=H-CTh, TB=Math.max(38,Math.min(54,availH*0.085));
   const ECHOH=portrait?Math.max(28,Math.min(44,availH*0.065)):46;
   if(portrait){ const bodyH=availH-TB-ECHOH;
@@ -92,13 +120,11 @@ function layout(){
     const bodyTop=TB,bodyBot=availH-ECHOH,bodyH=bodyBot-bodyTop;
     AX=0;AY=bodyTop;AW=Math.round(W*0.64);AVH=bodyH; PX=AW+8;PYY=bodyTop;PWD=W-PX-8;PVH=bodyH;
     ECx=0;ECy=bodyBot;ECw=W;ECh=ECHOH; }
-  if(IS_TOUCH){ const bs=Math.max(50,Math.min(W*0.16,CTh*0.64)),cy=CTy+CTh/2,r=bs/2;
-    BTN={left:{x:W*0.14,y:cy,r,g:"◀"},right:{x:W*0.33,y:cy,r,g:"▶"},
-         up:{x:W*0.67,y:cy,r,g:"▲"},down:{x:W*0.86,y:cy,r,g:"▼"}}; } else BTN=null;
+  BTN=null;
 }
 
 /* ===== LEVEL ===== */
-const GH=CFG.worldBottom, GROUND=8;
+const GH=CFG.worldBottom, GROUND=8, CROUCH_TUNNEL_CEILING=GROUND-1.35;
 function buildLevel(){
   const L={len:96,ground:[],ceil:[],item:[],blocks:[],foes:[],nok:[]};
   for(let c=0;c<L.len;c++){L.ground[c]=GROUND;L.ceil[c]=null;L.item[c]=null;}
@@ -109,7 +135,7 @@ function buildLevel(){
   L.blocks.push({col:39,row:GROUND-3,used:false,item:"coin"});
   L.blocks.push({col:12,row:GROUND-3,type:"brick"});
   L.blocks.push({col:72,row:GROUND-3,type:"brick"});
-  pit(16,17); ceil(26,31,GROUND-1);
+  pit(16,17); ceil(26,31,CROUCH_TUNNEL_CEILING);
   L.item[34]="cp"; pit(45,45);
   L.foes=[22,36,52,68];
   L.nok=[6,42,84];
@@ -568,7 +594,6 @@ function drawShell(x,yfoot,moving){ const s=TILE*0.6;
 function render(){ g.imageSmoothingEnabled=false; g.clearRect(0,0,W,H); g.fillStyle="#000"; g.fillRect(0,0,W,H);
   if(state==="title"){ renderTitle(); return; }
   renderHUD(); renderAction(); renderPuzzle(); renderEcho();
-  if(IS_TOUCH) renderControls();
   if(state==="win"||state==="lose") renderEnd();
 }
 function renderHUD(){
@@ -600,7 +625,9 @@ function renderAction(){
       for(let ry=gy+TILE; ry<gy+ACTION_WORLD_H; ry+=TILE){ g.beginPath();g.moveTo(gx,ry);g.lineTo(gx+TILE,ry);g.stroke(); }
       g.beginPath();g.moveTo(gx+TILE/2,gy);g.lineTo(gx+TILE/2,gy+ACTION_WORLD_H);g.stroke();
     } else { g.fillStyle=SKY; g.fillRect(gx,GROUND*TILE,TILE,ACTION_WORLD_H); }
-    if(L.ceil[c]!==null){ const cyb=L.ceil[c]*TILE; for(let by=-offY-TILE; by<cyb; by+=TILE) brick(gx,by,TILE); }
+    if(L.ceil[c]!==null){ const cyb=L.ceil[c]*TILE;
+      g.save(); g.beginPath(); g.rect(gx,-offY,TILE,cyb+offY); g.clip();
+      for(let by=-offY-TILE; by<cyb; by+=TILE) brick(gx,by,TILE); g.restore(); }
     const it=L.item[c]; if(it){ const gy=(L.ground[c]??GROUND)*TILE;
       if(it==="cp"){ g.fillStyle="#fff"; g.fillRect(gx+TILE/2-1,gy-64,3,64); g.fillStyle="#38d038"; g.fillRect(gx+TILE/2+2,gy-64,16,12);}
       else if(it==="goal"){ g.fillStyle="#0a0"; g.fillRect(gx+TILE/2-2,gy-140,4,140);
@@ -692,16 +719,6 @@ function renderEcho(){
     g.fillStyle=it.on?"#000":"#888"; g.font="700 15px 'Courier New',monospace"; g.textAlign="center"; g.fillText(it.k,x+20,cy+5);
     g.font="700 10px 'Courier New',monospace"; g.textAlign="left";
     g.fillStyle="#5c94fc"; g.fillText(it.a,x+37,cy-2); g.fillStyle="#f8d800"; g.fillText(it.p,x+37,cy+11); });
-}
-function renderControls(){
-  g.fillStyle="#0a0a0a"; g.fillRect(CTx,CTy,CTw,CTh);
-  g.strokeStyle="#222"; g.lineWidth=1; g.beginPath(); g.moveTo(0,CTy); g.lineTo(W,CTy); g.stroke();
-  for(const key of ["left","right","up","down"]){ const b=BTN[key],on=held[key];
-    g.beginPath(); g.arc(b.x,b.y,b.r,0,7); g.fillStyle=on?"#f8d800":"#2a2a2a"; g.fill();
-    g.strokeStyle="#fff"; g.lineWidth=2; g.stroke();
-    g.fillStyle=on?"#000":"#fff"; g.font="700 "+Math.round(b.r)+"px sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(b.g,b.x,b.y+2); }
-  g.textBaseline="alphabetic"; g.fillStyle="#666"; g.font="700 10px 'Courier New',monospace"; g.textAlign="center";
-  g.fillText("MOVE",(BTN.left.x+BTN.right.x)/2,CTy+15); g.fillText("JUMP/UP=踏 DOWN長押=ドロップ",(BTN.up.x+BTN.down.x)/2,CTy+15);
 }
 function renderTitle(){
   g.fillStyle="#000"; g.fillRect(0,0,W,H); const cx=W/2,u=H/100;
