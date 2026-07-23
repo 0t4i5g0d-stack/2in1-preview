@@ -33,11 +33,11 @@ const touchControls=document.getElementById("touch-controls"), controlButtons=[.
 for(const type of ["contextmenu","selectstart","dragstart","dblclick"]){
   document.addEventListener(type,event=>event.preventDefault(),{capture:true,passive:false});
 }
-let W=960,H=640;
+let W=960,H=640,renderDpr=1;
 const IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches || ("ontouchstart" in window);
 document.body.classList.toggle("touch-enabled",IS_TOUCH);
-function fit(){ const r=cv.getBoundingClientRect(); const dpr=Math.min(2,window.devicePixelRatio||1);
-  cv.width=Math.max(320,Math.round(r.width*dpr)); cv.height=Math.max(320,Math.round(r.height*dpr));
+function fit(){ const r=cv.getBoundingClientRect(); renderDpr=Math.min(2,window.devicePixelRatio||1);
+  cv.width=Math.max(320,Math.round(r.width*renderDpr)); cv.height=Math.max(320,Math.round(r.height*renderDpr));
   W=cv.width; H=cv.height; g.imageSmoothingEnabled=false; }
 addEventListener("resize",fit); addEventListener("orientationchange",()=>setTimeout(fit,120));
 
@@ -89,7 +89,7 @@ function recompTouch(){ touchH.left=touchH.right=touchH.up=touchH.down=false;
 function controlKeyAt(x,y){ const target=document.elementFromPoint(x,y); const button=target&&target.closest(".control-button");
   return button&&touchControls.contains(button)?button.dataset.key:null; }
 touchControls.addEventListener("pointerdown",e=>{ const key=controlKeyAt(e.clientX,e.clientY); if(!key)return;
-  e.preventDefault(); activePointers.set(e.pointerId,key); recompTouch(); touchControls.setPointerCapture(e.pointerId); },{passive:false});
+  e.preventDefault(); activePointers.set(e.pointerId,key); recompTouch(); try{touchControls.setPointerCapture(e.pointerId);}catch(_){} },{passive:false});
 touchControls.addEventListener("pointermove",e=>{ if(!activePointers.has(e.pointerId))return;
   const key=controlKeyAt(e.clientX,e.clientY); if(key)activePointers.set(e.pointerId,key); else activePointers.delete(e.pointerId); recompTouch(); },{passive:false});
 const releaseControl=e=>{ if(activePointers.delete(e.pointerId))recompTouch(); };
@@ -110,7 +110,7 @@ function layout(){
   const portrait=H>=W*1.02;
   CTh=IS_TOUCH?(portrait?Math.min(H*0.20,260):Math.min(H*0.26,190)):0;
   CTx=0;CTy=H-CTh;CTw=W;
-  touchControls.style.setProperty("--touch-controls-height",(CTh/(window.devicePixelRatio||1))+"px");
+  touchControls.style.setProperty("--touch-controls-height",(CTh/renderDpr)+"px");
   const availH=H-CTh, TB=Math.max(38,Math.min(54,availH*0.085));
   const ECHOH=portrait?Math.max(28,Math.min(44,availH*0.065)):46;
   if(portrait){ const bodyH=availH-TB-ECHOH;
