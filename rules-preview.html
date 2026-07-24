@@ -60,33 +60,32 @@
   g.fillStyle="rgba(0,0,0,.80)"; g.fillRect(0,0,W,H);
   const cx=W/2, portrait=H>=W*1.02;
   const fs=Math.max(14,Math.min(28,Math.floor(Math.min(W,H)*0.026)));
-  const title=Math.round(fs*1.65), sub=Math.round(fs*0.92), gap=fs*1.48;
-  let y=portrait?H*0.11:H*0.08;
+  const title=Math.round(fs*1.65), sub=Math.round(fs*0.92), gap=fs*1.50;
+  let y=portrait?H*0.105:H*0.075;
   g.textAlign="center"; g.textBaseline="middle";
   g.fillStyle="#f8d800"; g.font="900 "+title+"px 'Courier New',monospace"; g.fillText("HOW TO PLAY",cx,y);
   y+=title*1.15;
   g.fillStyle="#fff"; g.font="700 "+sub+"px 'Courier New',monospace"; g.fillText("ONE D-PAD, TWO GAMES",cx,y);
   y+=gap*1.25;
   const controls=[
-    ["←","SIDE 左へ進む","STACK 左へ"],
-    ["→","SIDE 右へ進む","STACK 右へ"],
-    ["↑","SIDE ジャンプ","STACK 回転"],
-    ["↓","SIDE しゃがむ / ドロップ","STACK 落下"]
+    ["←","左へ進む   /   ピースを左へ"],
+    ["→","右へ進む   /   ピースを右へ"],
+    ["↑","ジャンプ   /   回転"],
+    ["↓","しゃがむ・ドロップ   /   落下"]
   ];
   g.font="700 "+fs+"px 'Courier New',monospace";
-  for(const [key,side,stack] of controls){
-    g.fillStyle="#f8d800"; g.fillText(key,cx-Math.min(W*0.31,260),y);
-    g.textAlign="left"; g.fillStyle="#5c94fc"; g.fillText(side,cx-Math.min(W*0.24,205),y);
-    g.fillStyle="#f8d800"; g.fillText("/  "+stack,cx+Math.min(W*0.04,34),y);
-    g.textAlign="center"; y+=gap;
+  for(const [key,text] of controls){
+    g.fillStyle="#f8d800"; g.fillText(key,cx-Math.min(W*0.30,250),y);
+    g.fillStyle="#fff"; g.fillText(text,cx+Math.min(W*0.035,28),y);
+    y+=gap;
   }
   y+=gap*0.35;
   g.fillStyle="#fff"; g.font="700 "+fs+"px 'Courier New',monospace";
   g.fillText("ゴールへ進みながら",cx,y); y+=gap;
-  g.fillText("テトリスの積み上がりを防ぐ",cx,y); y+=gap*1.25;
+  g.fillText("テトリスの積み上がりを防ぐ",cx,y); y+=gap*1.20;
   g.fillStyle="#aaa"; g.font="700 "+sub+"px 'Courier New',monospace";
   g.fillText("固定 +1秒   LINE +5 / +10 / +15 / +20秒",cx,y);
-  const promptY=Math.min(H-(IS_TOUCH?CTh:0)-fs*1.4,y+gap*1.7);
+  const promptY=Math.min(H-(IS_TOUCH?CTh:0)-fs*1.4,y+gap*1.65);
   if(Math.floor(performance.now()/400)%2===0){
     g.fillStyle="#fff"; g.font="900 "+Math.round(fs*1.15)+"px 'Courier New',monospace";
     g.fillText(IS_TOUCH?"TAP TO PLAY":"PUSH ANY KEY",cx,promptY);
