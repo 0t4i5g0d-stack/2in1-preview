@@ -33,6 +33,9 @@ const touchControls=document.getElementById("touch-controls"), controlButtons=[.
 for(const type of ["contextmenu","selectstart","dragstart","dblclick"]){
   document.addEventListener(type,event=>event.preventDefault(),{capture:true,passive:false});
 }
+document.addEventListener("touchend",event=>{
+  if(event.target instanceof Element && event.target.closest("#stage")) event.preventDefault();
+},{capture:true,passive:false});
 let W=960,H=640,renderDpr=1;
 const IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches || ("ontouchstart" in window);
 document.body.classList.toggle("touch-enabled",IS_TOUCH);
