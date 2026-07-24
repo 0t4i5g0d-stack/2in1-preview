@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="robots" content="noindex,nofollow">
+<title>2 IN 1 RULES PREVIEW</title>
+<style>
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:monospace}
+  #status{display:grid;place-items:center;width:100%;height:100%;text-align:center;padding:24px;box-sizing:border-box}
+</style>
+</head>
+<body>
+<div id="status">RULES PREVIEW LOADING...</div>
+<script>
+(async()=>{
+  const source="https://raw.githubusercontent.com/0t4i5g0d-stack/2in1-preview/main/index.html";
+  try{
+    const response=await fetch(source,{cache:"no-store"});
+    if(!response.ok) throw new Error("HTTP "+response.status);
+    let html=await response.text();
+
+    const replacements=[
+      [
+        '  .control-button.is-held::before{background:#000}\n',
+        '  .control-button.is-held::before{background:#000}\n  .rules-open #touch-controls{filter:brightness(.35)}\n'
+      ],
+      [
+        'const CFG={ timeStart:20, timeCap:60, timeIdeal:40,',
+        'const CFG={ timeStart:15, timeCap:60, timeIdeal:40,'
+      ],
+      [
+        'addEventListener("keydown",e=>{const k=KEY[e.key];if(k){keyH[k]=true;e.preventDefault();}\n  if(state!=="play"&&(k||e.key===" "||e.key==="Enter"))startOrRestart();},{passive:false});',
+        'addEventListener("keydown",e=>{const k=KEY[e.key];\n  if(state!=="play"&&(k||e.key===" "||e.key==="Enter")){ e.preventDefault(); startOrRestart(); return; }\n  if(k){keyH[k]=true;e.preventDefault();}\n},{passive:false});'
+      ],
+      [
+        'touchControls.addEventListener("pointerdown",e=>{ const key=controlKeyAt(e.clientX,e.clientY); if(!key)return;\n  e.preventDefault(); activePointers.set(e.pointerId,key); recompTouch(); try{touchControls.setPointerCapture(e.pointerId);}catch(_){} },{passive:false});',
+        'touchControls.addEventListener("pointerdown",e=>{ const key=controlKeyAt(e.clientX,e.clientY); if(!key)return;\n  e.preventDefault();\n  if(state!=="play"){ activePointers.clear(); recompTouch(); startOrRestart(); return; }\n  activePointers.set(e.pointerId,key); recompTouch(); try{touchControls.setPointerCapture(e.pointerId);}catch(_){} },{passive:false});'
+      ],
+      [
+        'const GH=CFG.worldBottom, GROUND=8, CROUCH_TUNNEL_CEILING=GROUND-1.35;',
+        'const GH=CFG.worldBottom, GROUND=8, CROUCH_TUNNEL_CEILING=GROUND-0.93;'
+      ],
+      [
+        '  if(f.pU && A.onGround){ A.vy=-CFG.jumpV; A.onGround=false; A.hipDropping=false; }',
+        '  const jumpRoom=canOccupyPlayerRect(A.x,A.y-TILE*0.12,w,standH);\n  if(f.pU && A.onGround && jumpRoom){ A.vy=-CFG.jumpV; A.onGround=false; A.hipDropping=false; }'
+      ],
+      [
+        'function startOrRestart(){ reset(); state="play"; }\nfunction win(){ state="win"; } function gameOver(reason){ state="lose"; loseReason=reason||"時間切れ"; }',
+        'function setState(next){ state=next; document.body.classList.toggle("rules-open",state==="rules"); }\nfunction clearInputState(){\n  activePointers.clear(); recompTouch();\n  keyH.left=keyH.right=keyH.up=keyH.down=false;\n  prev.left=prev.right=prev.up=prev.down=false;\n}\nfunction startOrRestart(){\n  clearInputState();\n  if(state==="rules"){ setState("play"); return; }\n  reset(); setState("rules");\n}\nfunction win(){ setState("win"); } function gameOver(reason){ setState("lose"); loseReason=reason||"時間切れ"; }'
+      ],
+      [
+        '  renderHUD(); renderAction(); renderPuzzle(); renderEcho();\n  if(state==="win"||state==="lose") renderEnd();',
+        '  renderHUD(); renderAction(); renderPuzzle(); renderEcho();\n  if(state==="rules") renderRulesOverlay();\n  if(state==="win"||state==="lose") renderEnd();'
+      ],
+      [
+        'function renderEnd(){\n',
+        `function renderRulesOverlay(){
+  g.save();
+  g.fillStyle="rgba(0,0,0,.80)"; g.fillRect(0,0,W,H);
+  const cx=W/2, portrait=H>=W*1.02;
+  const fs=Math.max(14,Math.min(28,Math.floor(Math.min(W,H)*0.026)));
+  const title=Math.round(fs*1.65), sub=Math.round(fs*0.92), gap=fs*1.48;
+  let y=portrait?H*0.11:H*0.08;
+  g.textAlign="center"; g.textBaseline="middle";
+  g.fillStyle="#f8d800"; g.font="900 "+title+"px 'Courier New',monospace"; g.fillText("HOW TO PLAY",cx,y);
+  y+=title*1.15;
+  g.fillStyle="#fff"; g.font="700 "+sub+"px 'Courier New',monospace"; g.fillText("ONE D-PAD, TWO GAMES",cx,y);
+  y+=gap*1.25;
+  const controls=[
+    ["←","SIDE 左へ進む","STACK 左へ"],
+    ["→","SIDE 右へ進む","STACK 右へ"],
+    ["↑","SIDE ジャンプ","STACK 回転"],
+    ["↓","SIDE しゃがむ / ドロップ","STACK 落下"]
+  ];
+  g.font="700 "+fs+"px 'Courier New',monospace";
+  for(const [key,side,stack] of controls){
+    g.fillStyle="#f8d800"; g.fillText(key,cx-Math.min(W*0.31,260),y);
+    g.textAlign="left"; g.fillStyle="#5c94fc"; g.fillText(side,cx-Math.min(W*0.24,205),y);
+    g.fillStyle="#f8d800"; g.fillText("/  "+stack,cx+Math.min(W*0.04,34),y);
+    g.textAlign="center"; y+=gap;
+  }
+  y+=gap*0.35;
+  g.fillStyle="#fff"; g.font="700 "+fs+"px 'Courier New',monospace";
+  g.fillText("ゴールへ進みながら",cx,y); y+=gap;
+  g.fillText("テトリスの積み上がりを防ぐ",cx,y); y+=gap*1.25;
+  g.fillStyle="#aaa"; g.font="700 "+sub+"px 'Courier New',monospace";
+  g.fillText("固定 +1秒   LINE +5 / +10 / +15 / +20秒",cx,y);
+  const promptY=Math.min(H-(IS_TOUCH?CTh:0)-fs*1.4,y+gap*1.7);
+  if(Math.floor(performance.now()/400)%2===0){
+    g.fillStyle="#fff"; g.font="900 "+Math.round(fs*1.15)+"px 'Courier New',monospace";
+    g.fillText(IS_TOUCH?"TAP TO PLAY":"PUSH ANY KEY",cx,promptY);
+  }
+  g.restore();
+}
+function renderEnd(){
+`
+      ]
+    ];
+
+    for(const [before,after] of replacements){
+      const count=html.split(before).length-1;
+      if(count!==1) throw new Error("PATCH MISMATCH: "+before.slice(0,48));
+      html=html.replace(before,after);
+    }
+
+    html=html.replace('<title>2 IN 1</title>','<title>2 IN 1 RULES PREVIEW</title>');
+    document.open();
+    document.write(html);
+    document.close();
+  }catch(error){
+    document.getElementById("status").textContent="PREVIEW LOAD ERROR: "+error.message;
+  }
+})();
+</script>
+</body>
+</html>
